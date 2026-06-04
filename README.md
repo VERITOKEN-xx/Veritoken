@@ -2,7 +2,7 @@
 
 **RWA Tokenization Starter Kit for Stellar**
 
-Veritoken is a production-ready Soroban smart contract toolkit for bringing real-world assets on-chain. It gives any team a compliant, auditable foundation for tokenizing invoices, property shares, and carbon credits — with KYC verification and transfer compliance baked in at the protocol level, not bolted on after the fact.
+Veritoken is a toolkit for bringing real-world assets on-chain. It gives any team a compliant, auditable foundation for tokenizing invoices, property shares, and carbon credits — with KYC verification and transfer compliance baked in at the protocol level, not bolted on after the fact.
 
 The name fuses *veritas* (Latin: truth) with *token* — signalling verifiable, on-chain ownership of real things.
 
