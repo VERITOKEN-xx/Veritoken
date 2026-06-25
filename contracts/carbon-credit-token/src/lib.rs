@@ -111,6 +111,9 @@ impl CarbonCreditToken {
     // ── Issuance ─────────────────────────────────────────────────────────────
 
     pub fn mint(env: Env, to: Address, amount: i128) {
+        if amount <= 0 {
+            panic!("amount must be positive");
+        }
         Self::require_admin(&env);
         Self::require_kyc(&env, &to);
         Self::check_mint_compliance(&env, &to);
@@ -132,6 +135,9 @@ impl CarbonCreditToken {
     // ── Transfer ─────────────────────────────────────────────────────────────
 
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        if amount <= 0 {
+            panic!("amount must be positive");
+        }
         from.require_auth();
         Self::require_kyc(&env, &from);
         Self::require_kyc(&env, &to);
@@ -158,6 +164,9 @@ impl CarbonCreditToken {
         beneficiary: String,
         reason: String,
     ) -> RetirementReceipt {
+        if amount <= 0 {
+            panic!("amount must be positive");
+        }
         retiree.require_auth();
         let bal = Self::read_balance(&env, retiree.clone());
         if bal < amount {

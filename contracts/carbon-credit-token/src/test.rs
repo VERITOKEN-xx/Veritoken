@@ -102,6 +102,24 @@ fn test_mint_and_transfer() {
 }
 
 #[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_mint_rejects_zero_amount() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+
+    h.token.mint(&alice, &0);
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_mint_rejects_negative_amount() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+
+    h.token.mint(&alice, &-1);
+}
+
+#[test]
 fn test_mint_rejects_blocklisted_recipient() {
     let h = setup();
     let alice = Address::generate(&h.env);
@@ -129,6 +147,26 @@ fn test_transfer_requires_kyc() {
     h.approve_kyc(&alice);
     h.token.mint(&alice, &100);
     assert!(h.token.try_transfer(&alice, &bob, &10).is_err());
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_transfer_rejects_zero_amount() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+
+    h.token.transfer(&alice, &bob, &0);
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_transfer_rejects_negative_amount() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+
+    h.token.transfer(&alice, &bob, &-1);
 }
 
 #[test]
@@ -168,6 +206,34 @@ fn test_retire_records_receipt() {
     let r = h.token.get_receipt(&0);
     assert_eq!(r.amount, 40);
     assert_eq!(r.retiree, alice);
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_retire_rejects_zero_amount() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+
+    h.token.retire(
+        &alice,
+        &0,
+        &String::from_str(&h.env, "x"),
+        &String::from_str(&h.env, "y"),
+    );
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_retire_rejects_negative_amount() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+
+    h.token.retire(
+        &alice,
+        &-1,
+        &String::from_str(&h.env, "x"),
+        &String::from_str(&h.env, "y"),
+    );
 }
 
 #[test]
