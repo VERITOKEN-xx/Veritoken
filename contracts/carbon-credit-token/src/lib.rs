@@ -22,6 +22,7 @@ pub enum DataKey {
     TotalRetired,
     RetirementCount,
     Receipt(u32),
+    Paused,
 }
 
 #[contracttype]
@@ -79,6 +80,7 @@ impl CarbonCreditToken {
         env.storage()
             .instance()
             .set(&DataKey::RetirementCount, &0u32);
+        env.storage().instance().set(&DataKey::Paused, &false);
     }
 
     /// Legacy entry point — always panics to prevent post-deploy initialization.
@@ -108,9 +110,22 @@ impl CarbonCreditToken {
         0
     }
 
+    pub fn pause(env: Env) {
+        Self::require_admin(&env);
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.events().publish((symbol_short!("paused"),), ());
+    }
+
+    pub fn unpause(env: Env) {
+        Self::require_admin(&env);
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events().publish((symbol_short!("unpaused"),), ());
+    }
+
     // ── Issuance ─────────────────────────────────────────────────────────────
 
     pub fn mint(env: Env, to: Address, amount: i128) {
+        Self::require_not_paused(&env);
         Self::require_admin(&env);
         Self::require_kyc(&env, &to);
         Self::check_mint_compliance(&env, &to);
@@ -132,6 +147,7 @@ impl CarbonCreditToken {
     // ── Transfer ─────────────────────────────────────────────────────────────
 
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        Self::require_not_paused(&env);
         from.require_auth();
         Self::require_kyc(&env, &from);
         Self::require_kyc(&env, &to);
@@ -158,6 +174,7 @@ impl CarbonCreditToken {
         beneficiary: String,
         reason: String,
     ) -> RetirementReceipt {
+        Self::require_not_paused(&env);
         retiree.require_auth();
         let bal = Self::read_balance(&env, retiree.clone());
         if bal < amount {
@@ -263,6 +280,17 @@ impl CarbonCreditToken {
     fn require_admin(env: &Env) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
+    }
+
+    fn require_not_paused(env: &Env) {
+        if env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic!("token paused");
+        }
     }
 
     fn require_kyc(env: &Env, addr: &Address) {

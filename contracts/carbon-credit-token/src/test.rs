@@ -10,6 +10,9 @@ struct Harness {
     token: CarbonCreditTokenClient<'static>,
     kyc: KycRegistryClient<'static>,
     compliance: ComplianceEngineClient<'static>,
+    admin: Address,
+    kyc_id: Address,
+    compliance_id: Address,
     verifier: Address,
 }
 
@@ -58,6 +61,9 @@ fn setup() -> Harness {
         token,
         kyc,
         compliance,
+        admin,
+        kyc_id,
+        compliance_id,
         verifier,
     }
 }
@@ -168,6 +174,59 @@ fn test_retire_records_receipt() {
     let r = h.token.get_receipt(&0);
     assert_eq!(r.amount, 40);
     assert_eq!(r.retiree, alice);
+}
+
+#[test]
+fn test_per_token_pause_blocks_and_unpause_restores_operations() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+
+    h.token.pause();
+    assert!(h.token.try_mint(&alice, &100).is_err());
+
+    let second_token_id = h.env.register(
+        CarbonCreditToken,
+        (
+            h.admin.clone(),
+            h.kyc_id.clone(),
+            h.compliance_id.clone(),
+            meta(&h.env),
+        ),
+    );
+    let second_token = CarbonCreditTokenClient::new(&h.env, &second_token_id);
+    second_token.mint(&bob, &25);
+    assert_eq!(second_token.balance(&bob), 25);
+
+    h.token.unpause();
+    h.token.mint(&alice, &100);
+
+    h.token.pause();
+    assert!(h.token.try_transfer(&alice, &bob, &10).is_err());
+    assert!(h
+        .token
+        .try_retire(
+            &alice,
+            &10,
+            &String::from_str(&h.env, "Acme Corp 2024 offset"),
+            &String::from_str(&h.env, "annual net-zero pledge"),
+        )
+        .is_err());
+
+    h.token.unpause();
+    h.token.transfer(&alice, &bob, &10);
+    h.token.retire(
+        &alice,
+        &40,
+        &String::from_str(&h.env, "Acme Corp 2024 offset"),
+        &String::from_str(&h.env, "annual net-zero pledge"),
+    );
+
+    assert_eq!(h.token.balance(&alice), 50);
+    assert_eq!(h.token.balance(&bob), 10);
+    assert_eq!(h.token.total_retired(), 40);
 }
 
 #[test]
