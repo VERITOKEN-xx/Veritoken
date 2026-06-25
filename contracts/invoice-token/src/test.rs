@@ -104,6 +104,24 @@ fn test_issue_requires_kyc() {
 }
 
 #[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_issue_rejects_zero_amount() {
+    let h = setup();
+    let holder = Address::generate(&h.env);
+
+    h.token.issue(&holder, &0);
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_issue_rejects_negative_amount() {
+    let h = setup();
+    let holder = Address::generate(&h.env);
+
+    h.token.issue(&holder, &-1);
+}
+
+#[test]
 fn test_settle_then_redeem() {
     let h = setup();
     let holder = Address::generate(&h.env);
@@ -119,6 +137,24 @@ fn test_settle_then_redeem() {
     h.token.redeem(&holder, &600);
     assert_eq!(h.token.balance(&holder), 400);
     assert_eq!(h.token.total_supply(), 400);
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_redeem_rejects_zero_amount() {
+    let h = setup();
+    let holder = Address::generate(&h.env);
+
+    h.token.redeem(&holder, &0);
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_redeem_rejects_negative_amount() {
+    let h = setup();
+    let holder = Address::generate(&h.env);
+
+    h.token.redeem(&holder, &-1);
 }
 
 #[test]

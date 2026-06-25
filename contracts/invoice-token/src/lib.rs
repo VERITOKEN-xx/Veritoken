@@ -111,6 +111,9 @@ impl InvoiceToken {
     /// Mint tokens to represent this invoice. Admin-only.
     /// face_value_usd in the meta determines the max supply.
     pub fn issue(env: Env, to: Address, amount: i128) {
+        if amount <= 0 {
+            panic!("amount must be positive");
+        }
         Self::require_admin(&env);
         Self::require_kyc(&env, &to);
         if env
@@ -152,6 +155,9 @@ impl InvoiceToken {
 
     /// Burn tokens upon settlement / redemption.
     pub fn redeem(env: Env, from: Address, amount: i128) {
+        if amount <= 0 {
+            panic!("amount must be positive");
+        }
         from.require_auth();
         if !env
             .storage()
