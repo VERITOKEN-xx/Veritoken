@@ -38,6 +38,27 @@ fn test_double_initialize_panics() {
 }
 
 #[test]
+fn test_admin_path_before_initialize_returns_descriptive_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KycRegistry, ());
+    let client = KycRegistryClient::new(&env, &contract_id);
+    let verifier = Address::generate(&env);
+
+    let res = client.try_add_verifier(&verifier);
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_get_record_for_unknown_address_returns_descriptive_error() {
+    let (env, client, _admin) = setup();
+    let subject = Address::generate(&env);
+
+    let res = client.try_get_record(&subject);
+    assert!(res.is_err());
+}
+
+#[test]
 #[should_panic(expected = "not an authorized verifier")]
 fn test_unauthorized_verifier_cannot_approve() {
     let (env, client, _admin) = setup();

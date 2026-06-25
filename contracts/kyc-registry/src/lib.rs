@@ -3,13 +3,24 @@
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, String, Vec};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
+    Env, String, Vec,
+};
 
 #[contracttype]
 pub enum DataKey {
     Admin,
     KycStatus(Address),
     VerifierList,
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Error {
+    NotInitialized = 1,
+    NoKycRecord = 2,
 }
 
 #[contracttype]
@@ -136,10 +147,15 @@ impl KycRegistry {
     }
 
     pub fn get_record(env: &Env, addr: Address) -> KycRecord {
-        env.storage()
+        if let Some(record) = env
+            .storage()
             .persistent()
             .get(&DataKey::KycStatus(addr))
-            .expect("no KYC record")
+        {
+            record
+        } else {
+            panic_with_error!(env, Error::NoKycRecord)
+        }
     }
 
     pub fn get_tier(env: Env, addr: Address) -> u32 {
@@ -149,8 +165,16 @@ impl KycRegistry {
     // ── Internals ────────────────────────────────────────────────────────────
 
     fn require_admin(env: &Env) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin = Self::require_initialized(env);
         admin.require_auth();
+    }
+
+    fn require_initialized(env: &Env) -> Address {
+        if let Some(admin) = env.storage().instance().get(&DataKey::Admin) {
+            admin
+        } else {
+            panic_with_error!(env, Error::NotInitialized)
+        }
     }
 
     fn require_verifier(env: &Env, verifier: &Address) {
