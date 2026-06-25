@@ -1,6 +1,6 @@
 #![no_std]
 
-//! Invoice Token — tokenizes accounts-receivable invoices.
+//! Invoice Token - tokenizes accounts-receivable invoices.
 //! Each token unit represents 1 USD (7-decimal precision) of invoice face value.
 //! Adds invoice-specific metadata: issuer, debtor, due date, face value, discount rate.
 //! After settlement, redemption remains subject to compliance enforcement: a
@@ -21,6 +21,7 @@ pub enum DataKey {
     Allowance(Address, Address),
     TotalSupply,
     Settled,
+    Paused,
 }
 
 #[contracttype]
@@ -52,8 +53,8 @@ pub struct InvoiceToken;
 
 #[contractimpl]
 impl InvoiceToken {
-    /// Constructor — called atomically at deploy time via `stellar contract deploy -- --admin ...`.
-    /// This eliminates the deploy→initialize front-running window: there is no state in which
+    /// Constructor - called atomically at deploy time via `stellar contract deploy -- --admin ...`.
+    /// This eliminates the deploy?initialize front-running window: there is no state in which
     /// the contract exists but is uninitialized.
     #[allow(clippy::too_many_arguments)]
     pub fn __constructor(
@@ -75,9 +76,10 @@ impl InvoiceToken {
         env.storage().instance().set(&DataKey::InvoiceMeta, &meta);
         env.storage().instance().set(&DataKey::TotalSupply, &0i128);
         env.storage().instance().set(&DataKey::Settled, &false);
+        env.storage().instance().set(&DataKey::Paused, &false);
     }
 
-    /// Legacy entry point — always panics. Retained so that any attempt to call
+    /// Legacy entry point - always panics. Retained so that any attempt to call
     /// `initialize` post-deploy fails loudly rather than silently succeeding.
     #[allow(clippy::too_many_arguments)]
     pub fn initialize(
@@ -90,7 +92,7 @@ impl InvoiceToken {
         panic!("already initialized");
     }
 
-    // ── Metadata ─────────────────────────────────────────────────────────────
+    // ?? Metadata ?????????????????????????????????????????????????????????????
 
     pub fn get_meta(env: Env) -> InvoiceMeta {
         env.storage().instance().get(&DataKey::InvoiceMeta).unwrap()
@@ -106,11 +108,24 @@ impl InvoiceToken {
         7
     }
 
-    // ── Lifecycle ────────────────────────────────────────────────────────────
+    pub fn pause(env: Env) {
+        Self::require_admin(&env);
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.events().publish((symbol_short!("paused"),), ());
+    }
+
+    pub fn unpause(env: Env) {
+        Self::require_admin(&env);
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events().publish((symbol_short!("unpaused"),), ());
+    }
+
+    // ?? Lifecycle ????????????????????????????????????????????????????????????
 
     /// Mint tokens to represent this invoice. Admin-only.
     /// face_value_usd in the meta determines the max supply.
     pub fn issue(env: Env, to: Address, amount: i128) {
+        Self::require_not_paused(&env);
         Self::require_admin(&env);
         Self::require_kyc(&env, &to);
         if env
@@ -152,6 +167,7 @@ impl InvoiceToken {
 
     /// Burn tokens upon settlement / redemption.
     pub fn redeem(env: Env, from: Address, amount: i128) {
+        Self::require_not_paused(&env);
         from.require_auth();
         if !env
             .storage()
@@ -186,6 +202,7 @@ impl InvoiceToken {
     }
 
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        Self::require_not_paused(&env);
         from.require_auth();
         if env.storage().instance().get::<DataKey, bool>(&DataKey::Settled).unwrap_or(false) {
             panic!("invoice already settled");
@@ -214,6 +231,7 @@ impl InvoiceToken {
     }
 
     pub fn transfer_from(env: Env, spender: Address, from: Address, to: Address, amount: i128) {
+        Self::require_not_paused(&env);
         spender.require_auth();
         if env.storage().instance().get::<DataKey, bool>(&DataKey::Settled).unwrap_or(false) {
             panic!("invoice already settled");
@@ -289,11 +307,22 @@ impl InvoiceToken {
             .unwrap_or(false)
     }
 
-    // ── Internals ────────────────────────────────────────────────────────────
+    // ?? Internals ????????????????????????????????????????????????????????????
 
     fn require_admin(env: &Env) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
+    }
+
+    fn require_not_paused(env: &Env) {
+        if env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic!("token paused");
+        }
     }
 
     fn require_kyc(env: &Env, addr: &Address) {

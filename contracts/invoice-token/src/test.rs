@@ -3,7 +3,6 @@
 use crate::{InvoiceMeta, InvoiceToken, InvoiceTokenClient};
 use compliance_engine::{ComplianceEngine, ComplianceEngineClient};
 use kyc_registry::{KycRegistry, KycRegistryClient};
-use compliance_engine::{ComplianceEngine, ComplianceEngineClient};
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 struct Harness {
@@ -13,6 +12,8 @@ struct Harness {
     compliance: ComplianceEngineClient<'static>,
     verifier: Address,
     admin: Address,
+    kyc_id: Address,
+    compliance_id: Address,
 }
 
 fn meta(env: &Env) -> InvoiceMeta {
@@ -39,9 +40,11 @@ fn setup() -> Harness {
     let verifier = Address::generate(&env);
     kyc.add_verifier(&verifier);
 
-    let compliance_id = env.register(KycRegistry, ()); // placeholder address; unused by invoice token
+    let compliance_id = env.register(ComplianceEngine, ());
+    let compliance = ComplianceEngineClient::new(&env, &compliance_id);
+    compliance.initialize(&admin);
 
-    // Invoice token — constructor args passed atomically at register time
+    // Invoice token - constructor args passed atomically at register time
     let token_id = env.register(
         InvoiceToken,
         (
@@ -60,6 +63,8 @@ fn setup() -> Harness {
         compliance,
         verifier,
         admin,
+        kyc_id,
+        compliance_id,
     }
 }
 
@@ -141,12 +146,64 @@ fn test_redeem_insufficient_balance() {
 }
 
 #[test]
+fn test_per_token_pause_blocks_and_unpause_restores_operations() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    let spender = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+
+    h.token.pause();
+    assert!(h.token.try_issue(&alice, &100).is_err());
+
+    let second_token_id = h.env.register(
+        InvoiceToken,
+        (
+            h.admin.clone(),
+            h.kyc_id.clone(),
+            h.compliance_id.clone(),
+            meta(&h.env),
+        ),
+    );
+    let second_token = InvoiceTokenClient::new(&h.env, &second_token_id);
+    second_token.issue(&bob, &25);
+    assert_eq!(second_token.balance(&bob), 25);
+
+    h.token.unpause();
+    h.token.issue(&alice, &100);
+
+    h.token.approve(&alice, &spender, &20, &1_000);
+    h.token.pause();
+    assert!(h.token.try_transfer(&alice, &bob, &10).is_err());
+    assert!(h
+        .token
+        .try_transfer_from(&spender, &alice, &bob, &20)
+        .is_err());
+
+    h.token.unpause();
+    h.token.transfer(&alice, &bob, &10);
+    h.token.transfer_from(&spender, &alice, &bob, &20);
+
+    h.token.settle();
+    h.token.pause();
+    assert!(h.token.try_redeem(&alice, &10).is_err());
+
+    h.token.unpause();
+    h.token.redeem(&alice, &10);
+
+    assert_eq!(h.token.balance(&alice), 60);
+    assert_eq!(h.token.balance(&bob), 30);
+    assert_eq!(h.token.total_supply(), 90);
+}
+
+#[test]
 fn test_non_deployer_cannot_reinitialize() {
     let h = setup();
     let attacker = Address::generate(&h.env);
     let kyc_id = Address::generate(&h.env);
     let ce_id = Address::generate(&h.env);
-    // initialize must always panic — the constructor has already run
+    // initialize must always panic - the constructor has already run
     let result = h
         .token
         .try_initialize(&attacker, &kyc_id, &ce_id, &meta(&h.env));
