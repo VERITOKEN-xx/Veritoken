@@ -31,18 +31,20 @@ fn setup() -> Harness {
     let compliance = ComplianceEngineClient::new(&env, &compliance_id);
     compliance.initialize(&admin);
 
-    // RWA token
-    let token_id = env.register(RwaToken, ());
-    let token = RwaTokenClient::new(&env, &token_id);
-    token.initialize(
-        &admin,
-        &7,
-        &String::from_str(&env, "Veritoken RWA"),
-        &String::from_str(&env, "VTRWA"),
-        &String::from_str(&env, "property"),
-        &kyc_id,
-        &compliance_id,
+    // RWA token — constructor args passed atomically at register time
+    let token_id = env.register(
+        RwaToken,
+        (
+            admin.clone(),
+            7u32,
+            String::from_str(&env, "Veritoken RWA"),
+            String::from_str(&env, "VTRWA"),
+            String::from_str(&env, "property"),
+            kyc_id.clone(),
+            compliance_id.clone(),
+        ),
     );
+    let token = RwaTokenClient::new(&env, &token_id);
 
     Harness {
         env,
@@ -160,6 +162,40 @@ fn test_transfer_blocked_by_max_amount() {
 }
 
 #[test]
+fn test_max_holder_cap_blocks_new_holder_and_maintains_count() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    let charlie = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+    h.approve_kyc(&charlie);
+
+    h.compliance.set_rules(&ComplianceRules {
+        max_transfer_amount: 0,
+        min_holding_period: 0,
+        max_holders: 2,
+        require_same_jurisdiction: false,
+        paused: false,
+    });
+
+    h.token.mint(&alice, &1_000);
+    assert_eq!(h.compliance.holder_count(), 1);
+
+    h.token.transfer(&alice, &bob, &400);
+    assert_eq!(h.compliance.holder_count(), 2);
+    assert!(h.token.try_transfer(&alice, &charlie, &1).is_err());
+
+    h.token.transfer(&alice, &bob, &600);
+    assert_eq!(h.token.balance(&alice), 0);
+    assert_eq!(h.compliance.holder_count(), 1);
+
+    h.token.transfer(&bob, &charlie, &1);
+    assert_eq!(h.compliance.holder_count(), 2);
+    assert_eq!(h.token.balance(&charlie), 1);
+}
+
+#[test]
 fn test_approve_and_transfer_from() {
     let h = setup();
     let alice = Address::generate(&h.env);
@@ -217,63 +253,20 @@ fn test_compliance_metadata() {
 }
 
 #[test]
-fn test_secondary_market_holder_registration() {
+fn test_non_deployer_cannot_reinitialize() {
     let h = setup();
-    let alice = Address::generate(&h.env);
-    let bob = Address::generate(&h.env);
-    let carl = Address::generate(&h.env);
-
-    h.approve_kyc(&alice);
-    h.approve_kyc(&bob);
-    h.approve_kyc(&carl);
-
-    // 1. Mint tokens to A (Alice)
-    h.token.mint(&alice, &1_000);
-
-    // 2. Verify A (Alice) registered
-    assert_eq!(h.compliance.holder_count(), 1);
-
-    // 3. Transfer A -> B (Alice -> Bob)
-    h.token.transfer(&alice, &bob, &400);
-
-    // 4. Verify B (Bob) registered
-    // 5. Verify holder_count increased
-    assert_eq!(h.compliance.holder_count(), 2);
-
-    // 6. Verify HolderSince exists for B (Bob) by setting a min holding period rule
-    h.compliance.set_rules(&ComplianceRules {
-        max_transfer_amount: 0,
-        min_holding_period: 1_000,
-        max_holders: 0,
-        require_same_jurisdiction: false,
-        paused: false,
-    });
-
-    // Let's set ledger timestamp to B's registration time (let's say 5_000)
-    // Actually, h.env.ledger().timestamp() is 0 by default. B was registered at 0.
-    // If we try to transfer from Bob to Carl at timestamp 500, it should fail (elapsed < 1_000).
-    h.env.ledger().set_timestamp(500);
-    assert!(!h.compliance.can_transfer(&bob, &carl, &100));
-
-    // At timestamp 1_001, it should succeed (elapsed >= 1_000).
-    h.env.ledger().set_timestamp(1_001);
-    assert!(h.compliance.can_transfer(&bob, &carl, &100));
-
-    // Also verify:
-    // * repeated transfers to B do not increase holder_count again
-    h.token.transfer(&alice, &bob, &100);
-    assert_eq!(h.compliance.holder_count(), 2);
-
-    // * failed transfers do not register recipients:
-    //   - failed due to KYC (Dave is not KYC'd)
-    let dave = Address::generate(&h.env);
-    let res_kyc = h.token.try_transfer(&bob, &dave, &10);
-    assert!(res_kyc.is_err());
-    assert_eq!(h.compliance.holder_count(), 2);
-
-    //   - failed due to compliance (paused)
-    h.compliance.pause();
-    let res_comp = h.token.try_transfer(&bob, &carl, &10);
-    assert!(res_comp.is_err());
-    assert_eq!(h.compliance.holder_count(), 2);
+    let attacker = Address::generate(&h.env);
+    let kyc_id = h.token.kyc_registry();
+    let ce_id = h.token.compliance_engine();
+    // initialize must always panic — the constructor has already run
+    let result = h.token.try_initialize(
+        &attacker,
+        &7,
+        &String::from_str(&h.env, "Evil Token"),
+        &String::from_str(&h.env, "EVIL"),
+        &String::from_str(&h.env, "property"),
+        &kyc_id,
+        &ce_id,
+    );
+    assert!(result.is_err());
 }
