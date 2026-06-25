@@ -41,9 +41,17 @@ fn setup() -> Harness {
     let compliance = ComplianceEngineClient::new(&env, &compliance_id);
     compliance.initialize(&admin);
 
-    let token_id = env.register(PropertyToken, ());
+    // Property token — constructor args passed atomically at register time
+    let token_id = env.register(
+        PropertyToken,
+        (
+            admin.clone(),
+            kyc_id.clone(),
+            compliance_id.clone(),
+            meta(&env),
+        ),
+    );
     let token = PropertyTokenClient::new(&env, &token_id);
-    token.initialize(&admin, &kyc_id, &compliance_id, &meta(&env));
 
     Harness {
         env,
@@ -131,6 +139,19 @@ fn test_deposit_dividend_requires_shares() {
     h.token.deposit_dividend(&1_000);
     let alice = Address::generate(&h.env);
     assert_eq!(h.token.pending_dividend(&alice), 0);
+}
+
+#[test]
+fn test_non_deployer_cannot_reinitialize() {
+    let h = setup();
+    let attacker = Address::generate(&h.env);
+    let kyc_id = Address::generate(&h.env);
+    let ce_id = Address::generate(&h.env);
+    // initialize must always panic — the constructor has already run
+    let result = h
+        .token
+        .try_initialize(&attacker, &kyc_id, &ce_id, &meta(&h.env));
+    assert!(result.is_err());
 }
 
 #[test]

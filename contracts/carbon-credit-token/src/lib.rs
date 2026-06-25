@@ -53,16 +53,15 @@ pub struct CarbonCreditToken;
 
 #[contractimpl]
 impl CarbonCreditToken {
-    pub fn initialize(
+    /// Constructor — called atomically at deploy time via `stellar contract deploy -- --admin ...`.
+    /// Eliminates the deploy→initialize front-running window.
+    pub fn __constructor(
         env: Env,
         admin: Address,
         kyc_registry: Address,
         compliance_engine: Address,
         meta: ProjectMeta,
     ) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic!("already initialized");
-        }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .instance()
@@ -77,6 +76,17 @@ impl CarbonCreditToken {
         env.storage()
             .instance()
             .set(&DataKey::RetirementReceipts, &receipts);
+    }
+
+    /// Legacy entry point — always panics to prevent post-deploy initialization.
+    pub fn initialize(
+        _env: Env,
+        _admin: Address,
+        _kyc_registry: Address,
+        _compliance_engine: Address,
+        _meta: ProjectMeta,
+    ) {
+        panic!("already initialized");
     }
 
     // ── Metadata ─────────────────────────────────────────────────────────────

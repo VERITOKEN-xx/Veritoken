@@ -41,9 +41,17 @@ fn setup() -> Harness {
     let compliance = ComplianceEngineClient::new(&env, &compliance_id);
     compliance.initialize(&admin);
 
-    let token_id = env.register(CarbonCreditToken, ());
+    // Carbon credit token — constructor args passed atomically at register time
+    let token_id = env.register(
+        CarbonCreditToken,
+        (
+            admin.clone(),
+            kyc_id.clone(),
+            compliance_id.clone(),
+            meta(&env),
+        ),
+    );
     let token = CarbonCreditTokenClient::new(&env, &token_id);
-    token.initialize(&admin, &kyc_id, &compliance_id, &meta(&env));
 
     Harness {
         env,
@@ -156,4 +164,17 @@ fn test_retire_insufficient_balance() {
             &String::from_str(&h.env, "y"),
         )
         .is_err());
+}
+
+#[test]
+fn test_non_deployer_cannot_reinitialize() {
+    let h = setup();
+    let attacker = Address::generate(&h.env);
+    let kyc_id = Address::generate(&h.env);
+    let ce_id = Address::generate(&h.env);
+    // initialize must always panic — the constructor has already run
+    let result = h
+        .token
+        .try_initialize(&attacker, &kyc_id, &ce_id, &meta(&h.env));
+    assert!(result.is_err());
 }
