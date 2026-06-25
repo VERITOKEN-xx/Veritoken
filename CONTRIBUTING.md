@@ -1,6 +1,6 @@
 # Contributing to Veritoken
 
-Thanks for your interest in contributing. Veritoken is a Soroban smart contract toolkit for RWA tokenization on Stellar — contributions of all kinds are welcome.
+Thanks for your interest in contributing. Veritoken is a Soroban smart contract toolkit for RWA tokenization on Stellar - contributions of all kinds are welcome.
 
 ---
 
@@ -9,7 +9,7 @@ Thanks for your interest in contributing. Veritoken is a Soroban smart contract 
 - Rust (stable)
 - `wasm32-unknown-unknown` target: `rustup target add wasm32-unknown-unknown`
 - [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/cli/stellar-cli)
-- Node.js ≥ 20 (for frontend work)
+- Node.js ? 20 (for frontend work)
 
 ---
 
@@ -39,6 +39,7 @@ cargo build --release --target wasm32-unknown-unknown
 cd frontend
 cp .env.example .env   # fill in your deployed contract IDs
 npm install
+npm run check:env
 npm run dev
 ```
 
@@ -54,14 +55,14 @@ npm run dev
    cargo clippy --target wasm32-unknown-unknown
    cargo test --features testutils
    ```
-4. For frontend changes: `npm run build` and `npm run lint` must pass
+4. For frontend changes: `npm run build`, `npm run lint`, and `npm run check:env` must pass
 5. Open a pull request against `main` with a clear description of what and why
 
 ---
 
 ## Good First Issues
 
-Look for issues labelled [`good first issue`](https://github.com/abore9769/Veritoken/issues?q=label%3A%22good+first+issue%22) — these are scoped to be approachable without deep familiarity with the full codebase.
+Look for issues labelled [`good first issue`](https://github.com/abore9769/Veritoken/issues?q=label%3A%22good+first+issue%22) - these are scoped to be approachable without deep familiarity with the full codebase.
 
 ---
 
