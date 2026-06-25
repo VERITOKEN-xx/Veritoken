@@ -150,3 +150,17 @@ fn test_only_admin_can_set_rules() {
     let res = client.try_set_rules(&rules(0, 0, 0, true));
     assert!(res.is_err());
 }
+
+#[test]
+fn test_admin_path_before_initialize_returns_descriptive_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(ComplianceEngine, ());
+    let client = ComplianceEngineClient::new(&env, &contract_id);
+
+    let get_rules = client.try_get_rules();
+    assert!(get_rules.is_err());
+
+    let pause = client.try_pause();
+    assert!(pause.is_err());
+}

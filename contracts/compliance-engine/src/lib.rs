@@ -3,7 +3,10 @@
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Vec};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
+    Env, Vec,
+};
 
 #[contracttype]
 pub enum DataKey {
@@ -25,6 +28,13 @@ pub struct ComplianceRules {
     pub max_holders: u32,          // 0 = unlimited
     pub require_same_jurisdiction: bool,
     pub paused: bool,
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Error {
+    NotInitialized = 1,
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -63,7 +73,7 @@ impl ComplianceEngine {
     }
 
     pub fn get_rules(env: Env) -> ComplianceRules {
-        env.storage().instance().get(&DataKey::Rules).unwrap()
+        Self::rules(&env)
     }
 
     pub fn add_to_blocklist(env: Env, addr: Address) {
@@ -94,7 +104,7 @@ impl ComplianceEngine {
 
     pub fn pause(env: Env) {
         Self::require_admin(&env);
-        let mut rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
+        let mut rules = Self::rules(&env);
         rules.paused = true;
         env.storage().instance().set(&DataKey::Rules, &rules);
         env.events().publish((symbol_short!("paused"),), ());
@@ -102,7 +112,7 @@ impl ComplianceEngine {
 
     pub fn unpause(env: Env) {
         Self::require_admin(&env);
-        let mut rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
+        let mut rules = Self::rules(&env);
         rules.paused = false;
         env.storage().instance().set(&DataKey::Rules, &rules);
         env.events().publish((symbol_short!("unpaused"),), ());
@@ -119,7 +129,7 @@ impl ComplianceEngine {
     /// all of their tokens, so newly received balances cannot bypass the holding period
     /// by relying on an earlier acquisition time.
     pub fn can_transfer(env: Env, from: Address, to: Address, amount: i128) -> bool {
-        let rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
+        let rules = Self::rules(&env);
 
         if rules.paused {
             return false;
@@ -204,8 +214,25 @@ impl ComplianceEngine {
     // ── Internals ────────────────────────────────────────────────────────────
 
     fn require_admin(env: &Env) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin = Self::require_initialized(env);
         admin.require_auth();
+    }
+
+    fn require_initialized(env: &Env) -> Address {
+        if let Some(admin) = env.storage().instance().get(&DataKey::Admin) {
+            admin
+        } else {
+            panic_with_error!(env, Error::NotInitialized)
+        }
+    }
+
+    fn rules(env: &Env) -> ComplianceRules {
+        Self::require_initialized(env);
+        if let Some(rules) = env.storage().instance().get(&DataKey::Rules) {
+            rules
+        } else {
+            panic_with_error!(env, Error::NotInitialized)
+        }
     }
 
     fn blocklist(env: &Env) -> Vec<Address> {
