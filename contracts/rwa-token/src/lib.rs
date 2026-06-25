@@ -18,9 +18,10 @@ pub struct RwaToken;
 
 #[contractimpl]
 impl RwaToken {
-    /// Initialize the RWA token with metadata and compliance configuration.
+    /// Constructor — called atomically at deploy time via `stellar contract deploy -- --admin ...`.
+    /// Eliminates the deploy→initialize front-running window.
     #[allow(clippy::too_many_arguments)]
-    pub fn initialize(
+    pub fn __constructor(
         env: Env,
         admin: Address,
         decimal: u32,
@@ -30,15 +31,27 @@ impl RwaToken {
         kyc_registry: Address,
         compliance_engine: Address,
     ) {
-        if storage_types::has_admin(&env) {
-            panic!("already initialized");
-        }
         admin::write_admin(&env, &admin);
         metadata::write_metadata(&env, decimal, name, symbol);
         metadata::write_asset_type(&env, asset_type);
         kyc::write_kyc_registry(&env, &kyc_registry);
         compliance::write_compliance_engine(&env, &compliance_engine);
         balance::write_total_supply(&env, 0);
+    }
+
+    /// Legacy entry point — always panics to prevent post-deploy initialization.
+    #[allow(clippy::too_many_arguments)]
+    pub fn initialize(
+        _env: Env,
+        _admin: Address,
+        _decimal: u32,
+        _name: String,
+        _symbol: String,
+        _asset_type: String,
+        _kyc_registry: Address,
+        _compliance_engine: Address,
+    ) {
+        panic!("already initialized");
     }
 
     // ── Admin ────────────────────────────────────────────────────────────────

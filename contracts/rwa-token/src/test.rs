@@ -31,18 +31,20 @@ fn setup() -> Harness {
     let compliance = ComplianceEngineClient::new(&env, &compliance_id);
     compliance.initialize(&admin);
 
-    // RWA token
-    let token_id = env.register(RwaToken, ());
-    let token = RwaTokenClient::new(&env, &token_id);
-    token.initialize(
-        &admin,
-        &7,
-        &String::from_str(&env, "Veritoken RWA"),
-        &String::from_str(&env, "VTRWA"),
-        &String::from_str(&env, "property"),
-        &kyc_id,
-        &compliance_id,
+    // RWA token — constructor args passed atomically at register time
+    let token_id = env.register(
+        RwaToken,
+        (
+            admin.clone(),
+            7u32,
+            String::from_str(&env, "Veritoken RWA"),
+            String::from_str(&env, "VTRWA"),
+            String::from_str(&env, "property"),
+            kyc_id.clone(),
+            compliance_id.clone(),
+        ),
     );
+    let token = RwaTokenClient::new(&env, &token_id);
 
     Harness {
         env,
@@ -248,4 +250,23 @@ fn test_compliance_metadata() {
         h.token.get_compliance_metadata(&key),
         String::from_str(&h.env, "prospectus-v1")
     );
+}
+
+#[test]
+fn test_non_deployer_cannot_reinitialize() {
+    let h = setup();
+    let attacker = Address::generate(&h.env);
+    let kyc_id = h.token.kyc_registry();
+    let ce_id = h.token.compliance_engine();
+    // initialize must always panic — the constructor has already run
+    let result = h.token.try_initialize(
+        &attacker,
+        &7,
+        &String::from_str(&h.env, "Evil Token"),
+        &String::from_str(&h.env, "EVIL"),
+        &String::from_str(&h.env, "property"),
+        &kyc_id,
+        &ce_id,
+    );
+    assert!(result.is_err());
 }

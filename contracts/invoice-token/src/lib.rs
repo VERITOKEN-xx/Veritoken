@@ -42,16 +42,19 @@ pub struct InvoiceToken;
 
 #[contractimpl]
 impl InvoiceToken {
-    pub fn initialize(
+    /// Constructor — called atomically at deploy time via `stellar contract deploy -- --admin ...`.
+    /// This eliminates the deploy→initialize front-running window: there is no state in which
+    /// the contract exists but is uninitialized.
+    #[allow(clippy::too_many_arguments)]
+    pub fn __constructor(
         env: Env,
         admin: Address,
         kyc_registry: Address,
         compliance_engine: Address,
         meta: InvoiceMeta,
     ) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic!("already initialized");
-        }
+        // __constructor is only callable by the host at deploy time; it cannot be
+        // invoked again, so no "already initialized" guard is needed here.
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .instance()
@@ -62,6 +65,19 @@ impl InvoiceToken {
         env.storage().instance().set(&DataKey::InvoiceMeta, &meta);
         env.storage().instance().set(&DataKey::TotalSupply, &0i128);
         env.storage().instance().set(&DataKey::Settled, &false);
+    }
+
+    /// Legacy entry point — always panics. Retained so that any attempt to call
+    /// `initialize` post-deploy fails loudly rather than silently succeeding.
+    #[allow(clippy::too_many_arguments)]
+    pub fn initialize(
+        _env: Env,
+        _admin: Address,
+        _kyc_registry: Address,
+        _compliance_engine: Address,
+        _meta: InvoiceMeta,
+    ) {
+        panic!("already initialized");
     }
 
     // ── Metadata ─────────────────────────────────────────────────────────────
