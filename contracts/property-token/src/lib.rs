@@ -26,6 +26,7 @@ pub enum DataKey {
     /// on every balance change so transfers never move accrued dividends.
     Unclaimed(Address),
     DividendPerShare,
+    Paused,
 }
 
 #[contracttype]
@@ -74,6 +75,7 @@ impl PropertyToken {
         env.storage()
             .instance()
             .set(&DataKey::DividendPerShare, &0i128);
+        env.storage().instance().set(&DataKey::Paused, &false);
         env.storage().instance().set(&DataKey::PropertyMeta, &meta);
     }
 
@@ -107,9 +109,22 @@ impl PropertyToken {
         0
     }
 
+    pub fn pause(env: Env) {
+        Self::require_admin(&env);
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.events().publish((symbol_short!("paused"),), ());
+    }
+
+    pub fn unpause(env: Env) {
+        Self::require_admin(&env);
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events().publish((symbol_short!("unpaused"),), ());
+    }
+
     // ── Share management ─────────────────────────────────────────────────────
 
     pub fn mint(env: Env, to: Address, shares: i128) {
+        Self::require_not_paused(&env);
         Self::require_admin(&env);
         Self::require_kyc(&env, &to);
         Self::require_tier(&env, &to);
@@ -129,6 +144,7 @@ impl PropertyToken {
     }
 
     pub fn transfer(env: Env, from: Address, to: Address, shares: i128) {
+        Self::require_not_paused(&env);
         from.require_auth();
         Self::require_kyc(&env, &from);
         Self::require_kyc(&env, &to);
@@ -158,6 +174,7 @@ impl PropertyToken {
 
     /// Deposit dividend amount (in stroops) to be distributed pro-rata.
     pub fn deposit_dividend(env: Env, amount: i128) {
+        Self::require_not_paused(&env);
         Self::require_admin(&env);
         let total: i128 = env.storage().instance().get(&DataKey::TotalShares).unwrap();
         if total == 0 {
@@ -271,6 +288,17 @@ impl PropertyToken {
     fn require_admin(env: &Env) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
+    }
+
+    fn require_not_paused(env: &Env) {
+        if env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::Paused)
+            .unwrap_or(false)
+        {
+            panic!("token paused");
+        }
     }
 
     fn require_kyc(env: &Env, addr: &Address) {

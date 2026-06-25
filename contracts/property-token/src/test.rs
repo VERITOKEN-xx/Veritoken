@@ -138,6 +138,20 @@ fn test_mint_rejects_when_compliance_paused() {
 }
 
 #[test]
+fn test_per_token_pause_blocks_mint_until_unpaused() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+
+    h.token.pause();
+    assert!(h.token.try_mint(&alice, &100).is_err());
+
+    h.token.unpause();
+    h.token.mint(&alice, &100);
+    assert_eq!(h.token.balance(&alice), 100);
+}
+
+#[test]
 fn test_transfer_insufficient_shares() {
     let h = setup();
     let alice = Address::generate(&h.env);
@@ -146,6 +160,24 @@ fn test_transfer_insufficient_shares() {
     h.approve_kyc(&bob);
     h.token.mint(&alice, &10);
     assert!(h.token.try_transfer(&alice, &bob, &11).is_err());
+}
+
+#[test]
+fn test_per_token_pause_blocks_transfer_until_unpaused() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+    h.token.mint(&alice, &100);
+
+    h.token.pause();
+    assert!(h.token.try_transfer(&alice, &bob, &40).is_err());
+
+    h.token.unpause();
+    h.token.transfer(&alice, &bob, &40);
+    assert_eq!(h.token.balance(&alice), 60);
+    assert_eq!(h.token.balance(&bob), 40);
 }
 
 #[test]
@@ -165,6 +197,21 @@ fn test_dividend_distribution() {
 
     // Claiming again yields nothing.
     assert_eq!(h.token.claim_dividend(&alice), 0);
+}
+
+#[test]
+fn test_per_token_pause_blocks_deposit_dividend_until_unpaused() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.token.mint(&alice, &100);
+
+    h.token.pause();
+    assert!(h.token.try_deposit_dividend(&1_000).is_err());
+
+    h.token.unpause();
+    h.token.deposit_dividend(&1_000);
+    assert_eq!(h.token.pending_dividend(&alice), 100);
 }
 
 #[test]
