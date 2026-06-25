@@ -1,15 +1,22 @@
-use soroban_sdk::{Address, Env, String, Symbol};
+use soroban_sdk::{panic_with_error, Address, Env, String, Symbol};
 
-use crate::storage_types::{DataKey, INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD};
+use crate::{
+    storage_types::{
+        require_initialized, DataKey, INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD,
+    },
+    Error,
+};
 
 pub fn read_compliance_engine(env: &Env) -> Address {
     env.storage()
         .instance()
         .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-    env.storage()
-        .instance()
-        .get(&DataKey::ComplianceEngine)
-        .unwrap()
+    require_initialized(env);
+    if let Some(engine) = env.storage().instance().get(&DataKey::ComplianceEngine) {
+        engine
+    } else {
+        panic_with_error!(env, Error::NotInitialized)
+    }
 }
 
 pub fn write_compliance_engine(env: &Env, engine: &Address) {

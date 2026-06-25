@@ -1,6 +1,8 @@
 #![allow(unused)]
 
-use soroban_sdk::{contracttype, Address, Env, Symbol};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env, Symbol};
+
+use crate::Error;
 
 pub(crate) const DAY_IN_LEDGERS: u32 = 17280;
 pub(crate) const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
@@ -45,4 +47,10 @@ pub struct TokenMetadata {
 
 pub fn has_admin(env: &Env) -> bool {
     env.storage().instance().has(&DataKey::Admin)
+}
+
+pub fn require_initialized(env: &Env) {
+    if !has_admin(env) {
+        panic_with_error!(env, Error::NotInitialized);
+    }
 }

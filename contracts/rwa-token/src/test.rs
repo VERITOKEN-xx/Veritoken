@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::{RwaToken, RwaTokenClient};
+use crate::{storage_types::DataKey, RwaToken, RwaTokenClient};
 use compliance_engine::{ComplianceEngine, ComplianceEngineClient, ComplianceRules};
 use kyc_registry::{KycRegistry, KycRegistryClient};
 use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, String};
@@ -8,6 +8,7 @@ use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, String};
 struct Harness {
     env: Env,
     token: RwaTokenClient<'static>,
+    token_id: Address,
     kyc: KycRegistryClient<'static>,
     compliance: ComplianceEngineClient<'static>,
     verifier: Address,
@@ -49,6 +50,7 @@ fn setup() -> Harness {
     Harness {
         env,
         token,
+        token_id,
         kyc,
         compliance,
         verifier,
@@ -269,4 +271,21 @@ fn test_non_deployer_cannot_reinitialize() {
         &ce_id,
     );
     assert!(result.is_err());
+}
+
+#[test]
+fn test_pre_initialize_paths_return_descriptive_error() {
+    let h = setup();
+    let env = h.env.clone();
+    let token_id = h.token_id.clone();
+    env.as_contract(&token_id, || {
+        env.storage().instance().remove(&DataKey::Admin);
+    });
+    let to = Address::generate(&h.env);
+
+    let mint = h.token.try_mint(&to, &1);
+    assert!(mint.is_err());
+
+    let name = h.token.try_name();
+    assert!(name.is_err());
 }

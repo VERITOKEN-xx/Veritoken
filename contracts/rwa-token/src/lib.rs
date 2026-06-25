@@ -1,6 +1,8 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, symbol_short, Address, Env, String, Symbol,
+};
 
 mod admin;
 mod allowance;
@@ -15,6 +17,13 @@ mod test;
 
 #[contract]
 pub struct RwaToken;
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Error {
+    NotInitialized = 1,
+}
 
 #[contractimpl]
 impl RwaToken {

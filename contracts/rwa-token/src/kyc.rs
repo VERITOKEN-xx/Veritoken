@@ -1,12 +1,22 @@
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{panic_with_error, Address, Env};
 
-use crate::storage_types::{DataKey, INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD};
+use crate::{
+    storage_types::{
+        require_initialized, DataKey, INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD,
+    },
+    Error,
+};
 
 pub fn read_kyc_registry(env: &Env) -> Address {
     env.storage()
         .instance()
         .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-    env.storage().instance().get(&DataKey::KycRegistry).unwrap()
+    require_initialized(env);
+    if let Some(registry) = env.storage().instance().get(&DataKey::KycRegistry) {
+        registry
+    } else {
+        panic_with_error!(env, Error::NotInitialized)
+    }
 }
 
 pub fn write_kyc_registry(env: &Env, registry: &Address) {
