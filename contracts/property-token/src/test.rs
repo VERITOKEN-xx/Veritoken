@@ -3,7 +3,7 @@
 use crate::{PropertyMeta, PropertyToken, PropertyTokenClient};
 use compliance_engine::{ComplianceEngine, ComplianceEngineClient};
 use kyc_registry::{KycRegistry, KycRegistryClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::{Address as _, Events as _}, Address, Env, IntoVal, String};
 
 struct Harness {
     env: Env,
@@ -158,6 +158,16 @@ fn test_dividend_distribution() {
     // Deposit 1000 stroops over 1000 total shares => 1 per share.
     h.token.deposit_dividend(&1_000);
     assert_eq!(h.token.pending_dividend(&alice), 100);
+
+    // Assert that the "div_dep" event was emitted
+    let events = h.env.events().all();
+    let div_dep_topic = soroban_sdk::symbol_short!("div_dep").into_val(&h.env);
+    assert!(
+        events
+            .iter()
+            .any(|(_, topics, _)| topics.first() == Some(&div_dep_topic)),
+        "div_dep event should have been emitted"
+    );
 
     let claimed = h.token.claim_dividend(&alice);
     assert_eq!(claimed, 100);

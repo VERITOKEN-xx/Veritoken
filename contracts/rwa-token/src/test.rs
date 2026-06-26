@@ -3,7 +3,10 @@
 use crate::{RwaToken, RwaTokenClient};
 use compliance_engine::{ComplianceEngine, ComplianceEngineClient, ComplianceRules};
 use kyc_registry::{KycRegistry, KycRegistryClient};
-use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, String};
+use soroban_sdk::{
+    testutils::{Address as _, Events as _, Ledger as _},
+    Address, Env, IntoVal, String,
+};
 
 struct Harness {
     env: Env,
@@ -107,6 +110,16 @@ fn test_transfer_happy_path() {
 
     assert_eq!(h.token.balance(&alice), 600);
     assert_eq!(h.token.balance(&bob), 400);
+
+    // Assert that a "transfer" event was emitted
+    let events = h.env.events().all();
+    let transfer_topic = soroban_sdk::symbol_short!("transfer").into_val(&h.env);
+    assert!(
+        events
+            .iter()
+            .any(|(_, topics, _)| topics.first() == Some(&transfer_topic)),
+        "transfer event should have been emitted"
+    );
 }
 
 #[test]

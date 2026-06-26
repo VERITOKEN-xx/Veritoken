@@ -3,8 +3,7 @@
 use crate::{InvoiceMeta, InvoiceToken, InvoiceTokenClient};
 use compliance_engine::{ComplianceEngine, ComplianceEngineClient};
 use kyc_registry::{KycRegistry, KycRegistryClient};
-use compliance_engine::{ComplianceEngine, ComplianceEngineClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::{Address as _, Events as _}, Address, Env, IntoVal, String};
 
 struct Harness {
     env: Env,
@@ -39,7 +38,9 @@ fn setup() -> Harness {
     let verifier = Address::generate(&env);
     kyc.add_verifier(&verifier);
 
-    let compliance_id = env.register(KycRegistry, ()); // placeholder address; unused by invoice token
+    let compliance_id = env.register(ComplianceEngine, ());
+    let compliance = ComplianceEngineClient::new(&env, &compliance_id);
+    compliance.initialize(&admin);
 
     // Invoice token — constructor args passed atomically at register time
     let token_id = env.register(
@@ -101,6 +102,16 @@ fn test_issue_requires_kyc() {
     h.token.issue(&holder, &1_000);
     assert_eq!(h.token.balance(&holder), 1_000);
     assert_eq!(h.token.total_supply(), 1_000);
+
+    // Assert that the "issued" event was emitted
+    let events = h.env.events().all();
+    let issued_topic = soroban_sdk::symbol_short!("issued").into_val(&h.env);
+    assert!(
+        events
+            .iter()
+            .any(|(_, topics, _)| topics.first() == Some(&issued_topic)),
+        "issued event should have been emitted"
+    );
 }
 
 #[test]

@@ -2,8 +2,8 @@
 
 use crate::{ComplianceEngine, ComplianceEngineClient, ComplianceRules};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
-    Address, Env,
+    testutils::{Address as _, Events as _, Ledger},
+    Address, Env, IntoVal,
 };
 
 fn setup() -> (Env, ComplianceEngineClient<'static>, Address) {
@@ -149,4 +149,20 @@ fn test_only_admin_can_set_rules() {
     // No auth mocked -> require_auth should fail
     let res = client.try_set_rules(&rules(0, 0, 0, true));
     assert!(res.is_err());
+}
+
+#[test]
+fn test_set_rules_emits_rules_set_event() {
+    let (env, client, _admin) = setup();
+
+    client.set_rules(&rules(500, 0, 0, false));
+
+    let events = env.events().all();
+    let rules_set_topic = soroban_sdk::symbol_short!("rules_set").into_val(&env);
+    assert!(
+        events
+            .iter()
+            .any(|(_, topics, _)| topics.first() == Some(&rules_set_topic)),
+        "rules_set event should have been emitted"
+    );
 }

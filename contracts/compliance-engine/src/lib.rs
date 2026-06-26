@@ -1,9 +1,20 @@
 #![no_std]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Vec};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, contracterror, panic_with_error, symbol_short,
+    Address, Env, Vec,
+};
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum ComplianceError {
+    AlreadyInitialized = 1,
+}
 
 #[contracttype]
 pub enum DataKey {
@@ -38,7 +49,7 @@ pub struct ComplianceEngine;
 impl ComplianceEngine {
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
-            panic!("already initialized");
+            panic_with_error!(env, ComplianceError::AlreadyInitialized);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
         let default_rules = ComplianceRules {
@@ -63,7 +74,10 @@ impl ComplianceEngine {
     }
 
     pub fn get_rules(env: Env) -> ComplianceRules {
-        env.storage().instance().get(&DataKey::Rules).unwrap()
+        env.storage()
+            .instance()
+            .get(&DataKey::Rules)
+            .expect("rules must be set")
     }
 
     pub fn add_to_blocklist(env: Env, addr: Address) {
@@ -94,7 +108,11 @@ impl ComplianceEngine {
 
     pub fn pause(env: Env) {
         Self::require_admin(&env);
-        let mut rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
+        let mut rules: ComplianceRules = env
+            .storage()
+            .instance()
+            .get(&DataKey::Rules)
+            .expect("rules must be set");
         rules.paused = true;
         env.storage().instance().set(&DataKey::Rules, &rules);
         env.events().publish((symbol_short!("paused"),), ());
@@ -102,7 +120,11 @@ impl ComplianceEngine {
 
     pub fn unpause(env: Env) {
         Self::require_admin(&env);
-        let mut rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
+        let mut rules: ComplianceRules = env
+            .storage()
+            .instance()
+            .get(&DataKey::Rules)
+            .expect("rules must be set");
         rules.paused = false;
         env.storage().instance().set(&DataKey::Rules, &rules);
         env.events().publish((symbol_short!("unpaused"),), ());
@@ -110,8 +132,6 @@ impl ComplianceEngine {
 
     // ── Transfer validation ──────────────────────────────────────────────────
 
-    /// Called by rwa-token before every transfer. Returns true if the
-    /// transfer is compliant with all configured rules.
     /// Called by asset tokens to validate a transfer.
     ///
     /// The minimum holding period is measured from the holder's most recent receipt of
@@ -119,7 +139,11 @@ impl ComplianceEngine {
     /// all of their tokens, so newly received balances cannot bypass the holding period
     /// by relying on an earlier acquisition time.
     pub fn can_transfer(env: Env, from: Address, to: Address, amount: i128) -> bool {
-        let rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
+        let rules: ComplianceRules = env
+            .storage()
+            .instance()
+            .get(&DataKey::Rules)
+            .expect("rules must be set");
 
         if rules.paused {
             return false;
@@ -204,7 +228,11 @@ impl ComplianceEngine {
     // ── Internals ────────────────────────────────────────────────────────────
 
     fn require_admin(env: &Env) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("admin must be set");
         admin.require_auth();
     }
 
