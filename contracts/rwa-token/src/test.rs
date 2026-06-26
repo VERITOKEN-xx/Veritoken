@@ -5,6 +5,7 @@ use compliance_engine::{ComplianceEngine, ComplianceEngineClient, ComplianceRule
 use kyc_registry::{KycRegistry, KycRegistryClient};
 use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, String};
 
+#[allow(dead_code)]
 struct Harness {
     env: Env,
     token: RwaTokenClient<'static>,

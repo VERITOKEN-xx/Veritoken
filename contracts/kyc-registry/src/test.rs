@@ -2,7 +2,7 @@
 
 use crate::{KycRegistry, KycRegistryClient};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::Address as _,
     Address, Env, String,
 };
 

@@ -128,7 +128,6 @@ impl InvoiceToken {
         env.storage()
             .persistent()
             .extend_ttl(&DataKey::Balance(to.clone()), THRESHOLD, BUMP);
-        Self::register_holder(&env, to.clone());
         let supply: i128 = env
             .storage()
             .instance()
@@ -137,9 +136,7 @@ impl InvoiceToken {
         env.storage()
             .instance()
             .set(&DataKey::TotalSupply, &(supply + amount));
-        
         Self::register_holder(&env, &to);
-
         env.events().publish((symbol_short!("issued"), to), amount);
     }
 
@@ -179,6 +176,72 @@ impl InvoiceToken {
             .set(&DataKey::TotalSupply, &(supply - amount));
         env.events()
             .publish((symbol_short!("redeemed"), from), amount);
+    }
+
+    /// SEP-41 burn — destroys `amount` tokens from `from`.
+    /// Requires KYC for the holder and compliance checks (pause / blocklist).
+    pub fn burn(env: Env, from: Address, amount: i128) {
+        from.require_auth();
+        Self::require_kyc(&env, &from);
+        Self::check_redeem_compliance(&env, &from);
+        let bal = Self::read_balance(&env, from.clone());
+        if bal < amount {
+            panic!("insufficient balance");
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(from.clone()), &(bal - amount));
+        let supply: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalSupply)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalSupply, &(supply - amount));
+        env.events().publish((symbol_short!("burn"), from), amount);
+    }
+
+    /// SEP-41 burn_from — destroys `amount` tokens from `from` on behalf of `spender`.
+    /// Requires KYC for the holder, compliance checks (pause / blocklist), and
+    /// consumes the spender's allowance.
+    pub fn burn_from(env: Env, spender: Address, from: Address, amount: i128) {
+        spender.require_auth();
+        Self::require_kyc(&env, &from);
+        Self::check_redeem_compliance(&env, &from);
+
+        // Spend allowance
+        let allowance = Self::read_allowance(&env, from.clone(), spender.clone());
+        if allowance.amount < amount {
+            panic!("insufficient allowance");
+        }
+        if allowance.expiration_ledger < env.ledger().sequence() {
+            panic!("allowance expired");
+        }
+        let new_allowance = AllowanceValue {
+            amount: allowance.amount - amount,
+            expiration_ledger: allowance.expiration_ledger,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Allowance(from.clone(), spender.clone()), &new_allowance);
+
+        let bal = Self::read_balance(&env, from.clone());
+        if bal < amount {
+            panic!("insufficient balance");
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(from.clone()), &(bal - amount));
+        let supply: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalSupply)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalSupply, &(supply - amount));
+        env.events().publish((symbol_short!("burn"), from), amount);
     }
 
     pub fn balance(env: Env, id: Address) -> i128 {
@@ -357,17 +420,7 @@ mod kyc_iface {
     }
 }
 
-mod compliance_iface {
-    use soroban_sdk::{contractclient, Address};
-    #[contractclient(name = "ComplianceEngineClient")]
-    #[allow(dead_code)]
-    pub trait ComplianceEngine {
-        fn get_rules(env: soroban_sdk::Env) -> super::compliance_engine::ComplianceRules;
-        fn is_blocklisted(env: soroban_sdk::Env, addr: Address) -> bool;
-    }
-}
-
-mod compliance_engine {
+mod compliance_engine_types {
     use soroban_sdk::contracttype;
 
     #[contracttype]
@@ -381,16 +434,17 @@ mod compliance_engine {
     }
 }
 
-use compliance_iface::ComplianceEngineClient;
-use kyc_iface::KycRegistryClient;
-
 mod compliance_iface {
     use soroban_sdk::{contractclient, Address};
     #[contractclient(name = "ComplianceEngineClient")]
     #[allow(dead_code)]
     pub trait ComplianceEngine {
+        fn get_rules(env: soroban_sdk::Env) -> super::compliance_engine_types::ComplianceRules;
+        fn is_blocklisted(env: soroban_sdk::Env, addr: Address) -> bool;
         fn can_transfer(env: soroban_sdk::Env, from: Address, to: Address, amount: i128) -> bool;
         fn register_holder(env: soroban_sdk::Env, addr: Address);
     }
 }
+
 use compliance_iface::ComplianceEngineClient;
+use kyc_iface::KycRegistryClient;
