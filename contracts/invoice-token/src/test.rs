@@ -86,6 +86,21 @@ fn test_issue_idempotency_holder_count() {
     assert_eq!(h.token.balance(&holder), 1_500);
 }
 
+#[test]
+fn test_issue_cannot_exceed_face_value() {
+    let h = setup();
+    let holder = Address::generate(&h.env);
+    h.approve_kyc(&holder);
+    
+    let meta = h.token.get_meta();
+    // Issue exactly face value
+    h.token.issue(&holder, &meta.face_value_usd);
+    assert_eq!(h.token.balance(&holder), meta.face_value_usd);
+    
+    // Try to issue one more token and verify panic
+    assert!(h.token.try_issue(&holder, &1).is_err());
+}
+
 impl Harness {
     fn approve_kyc(&self, addr: &Address) {
         self.kyc.approve(

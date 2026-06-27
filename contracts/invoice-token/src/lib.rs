@@ -199,6 +199,15 @@ impl InvoiceToken {
         {
             panic_with_error!(env, InvoiceError::AlreadySettled);
         }
+        let meta: InvoiceMeta = env.storage().instance().get(&DataKey::InvoiceMeta).unwrap();
+        let supply: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalSupply)
+            .unwrap_or(0);
+        if supply + amount > meta.face_value_usd {
+            panic!("exceeds invoice face value");
+        }
         let bal = Self::read_balance(&env, to.clone());
         env.storage()
             .persistent()
@@ -207,11 +216,6 @@ impl InvoiceToken {
             .persistent()
             .extend_ttl(&DataKey::Balance(to.clone()), THRESHOLD, BUMP);
         Self::register_holder(&env, &to);
-        let supply: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TotalSupply)
-            .unwrap_or(0);
         env.storage()
             .instance()
             .set(&DataKey::TotalSupply, &(supply + amount));
