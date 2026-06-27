@@ -291,3 +291,60 @@ fn test_revoke_batch_exceeds_limit() {
     let res = client.try_revoke_batch(&verifier, &batch);
     assert!(res.is_err());
 }
+
+#[test]
+fn test_get_subjects_by_verifier() {
+    let (env, client, _admin) = setup();
+    let verifier = Address::generate(&env);
+    let subject1 = Address::generate(&env);
+    let subject2 = Address::generate(&env);
+    let subject3 = Address::generate(&env);
+    client.add_verifier(&verifier);
+
+    // Approve subjects
+    let mut batch = Vec::new(&env);
+    batch.push_back((subject1.clone(), 0, 0, String::from_str(&env, "US")));
+    batch.push_back((subject2.clone(), 1, 0, String::from_str(&env, "UK")));
+    batch.push_back((subject3.clone(), 2, 0, String::from_str(&env, "CA")));
+    client.approve_batch(&verifier, &batch);
+    
+    // Query all subjects
+    let subjects = client.get_subjects_by_verifier(&verifier, &0, &50);
+    assert_eq!(subjects.len(), 3);
+    assert!(subjects.contains(&subject1));
+    assert!(subjects.contains(&subject2));
+    assert!(subjects.contains(&subject3));
+}
+
+#[test]
+fn test_get_subjects_by_verifier_pagination() {
+    let (env, client, _admin) = setup();
+    let verifier = Address::generate(&env);
+    client.add_verifier(&verifier);
+
+    // Approve 5 subjects
+    let mut batch = Vec::new(&env);
+    let mut subjects_vec: Vec<Address> = Vec::new();
+    for _i in 0..5 {
+        let subject = Address::generate(&env);
+        subjects_vec.push(subject.clone());
+        batch.push_back((subject, 0, 0, String::from_str(&env, "US")));
+    }
+    client.approve_batch(&verifier, &batch);
+    
+    // Query first page (limit 2)
+    let page1 = client.get_subjects_by_verifier(&verifier, &0, &2);
+    assert_eq!(page1.len(), 2);
+    
+    // Query second page
+    let page2 = client.get_subjects_by_verifier(&verifier, &2, &2);
+    assert_eq!(page2.len(), 2);
+    
+    // Query third page (only 1 left)
+    let page3 = client.get_subjects_by_verifier(&verifier, &4, &2);
+    assert_eq!(page3.len(), 1);
+    
+    // Query beyond the end
+    let page_empty = client.get_subjects_by_verifier(&verifier, &10, &2);
+    assert_eq!(page_empty.len(), 0);
+}
