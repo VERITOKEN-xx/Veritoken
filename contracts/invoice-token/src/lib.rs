@@ -206,6 +206,72 @@ impl InvoiceToken {
             .publish((symbol_short!("redeemed"), from), amount);
     }
 
+    /// SEP-41 burn — destroys `amount` tokens from `from`.
+    /// Requires KYC for the holder and compliance checks (pause / blocklist).
+    pub fn burn(env: Env, from: Address, amount: i128) {
+        from.require_auth();
+        Self::require_kyc(&env, &from);
+        Self::check_redeem_compliance(&env, &from);
+        let bal = Self::read_balance(&env, from.clone());
+        if bal < amount {
+            panic!("insufficient balance");
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(from.clone()), &(bal - amount));
+        let supply: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalSupply)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalSupply, &(supply - amount));
+        env.events().publish((symbol_short!("burn"), from), amount);
+    }
+
+    /// SEP-41 burn_from — destroys `amount` tokens from `from` on behalf of `spender`.
+    /// Requires KYC for the holder, compliance checks (pause / blocklist), and
+    /// consumes the spender's allowance.
+    pub fn burn_from(env: Env, spender: Address, from: Address, amount: i128) {
+        spender.require_auth();
+        Self::require_kyc(&env, &from);
+        Self::check_redeem_compliance(&env, &from);
+
+        // Spend allowance
+        let allowance = Self::read_allowance(&env, from.clone(), spender.clone());
+        if allowance.amount < amount {
+            panic!("insufficient allowance");
+        }
+        if allowance.expiration_ledger < env.ledger().sequence() {
+            panic!("allowance expired");
+        }
+        let new_allowance = AllowanceValue {
+            amount: allowance.amount - amount,
+            expiration_ledger: allowance.expiration_ledger,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Allowance(from.clone(), spender.clone()), &new_allowance);
+
+        let bal = Self::read_balance(&env, from.clone());
+        if bal < amount {
+            panic!("insufficient balance");
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(from.clone()), &(bal - amount));
+        let supply: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalSupply)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalSupply, &(supply - amount));
+        env.events().publish((symbol_short!("burn"), from), amount);
+    }
+
     pub fn balance(env: Env, id: Address) -> i128 {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         Self::read_balance(&env, id)

@@ -5,6 +5,9 @@ use compliance_engine::{ComplianceEngine, ComplianceEngineClient};
 use kyc_registry::{KycRegistry, KycRegistryClient};
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
+// ── Test harness ─────────────────────────────────────────────────────────────
+
+#[allow(dead_code)]
 struct Harness {
     env: Env,
     token: InvoiceTokenClient<'static>,
@@ -33,6 +36,7 @@ fn setup() -> Harness {
     env.mock_all_auths();
     let admin = Address::generate(&env);
 
+    // KYC registry
     let kyc_id = env.register(KycRegistry, ());
     let kyc = KycRegistryClient::new(&env, &kyc_id);
     kyc.initialize(&admin);
@@ -92,6 +96,8 @@ impl Harness {
         );
     }
 }
+
+// ── Existing tests ────────────────────────────────────────────────────────────
 
 #[test]
 fn test_metadata() {
