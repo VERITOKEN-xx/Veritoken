@@ -233,6 +233,22 @@ impl KycRegistry {
             .publish((symbol_short!("revoked"), subject), verifier);
     }
 
+    pub fn revoke_batch(env: Env, verifier: Address, subjects: Vec<Address>) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        verifier.require_auth();
+        Self::require_verifier(&env, &verifier);
+        if subjects.len() > 20 {
+            panic!("batch too large");
+        }
+        for subject in subjects.iter() {
+            let mut record = Self::get_record_or_default(&env, subject.clone(), &verifier);
+            record.status = KycStatus::Revoked;
+            Self::write_record(&env, subject.clone(), record);
+            env.events()
+                .publish((symbol_short!("revoked"), subject.clone()), verifier.clone());
+        }
+    }
+
     /// Update only the `tier` field of an existing, Approved KYC record.
     /// Requires verifier auth and the subject must currently be Approved.
     /// Emits a `tier_upd` event with `(subject, new_tier)`.
