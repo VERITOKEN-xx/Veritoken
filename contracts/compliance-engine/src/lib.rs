@@ -41,6 +41,7 @@ impl ComplianceEngine {
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("already initialized");
         }
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .instance()
@@ -62,16 +63,19 @@ impl ComplianceEngine {
 
     pub fn set_rules(env: Env, rules: ComplianceRules) {
         Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         env.storage().instance().set(&DataKey::Rules, &rules);
         env.events().publish((symbol_short!("rules_set"),), ());
     }
 
     pub fn get_rules(env: Env) -> ComplianceRules {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         env.storage().instance().get(&DataKey::Rules).unwrap()
     }
 
     pub fn add_to_blocklist(env: Env, addr: Address) {
         Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let mut list = Self::blocklist(&env);
         if !list.contains(&addr) {
             list.push_back(addr.clone());
@@ -82,6 +86,7 @@ impl ComplianceEngine {
 
     pub fn remove_from_blocklist(env: Env, addr: Address) {
         Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let list = Self::blocklist(&env);
         let mut new_list: Vec<Address> = Vec::new(&env);
         for a in list.iter() {
@@ -93,11 +98,13 @@ impl ComplianceEngine {
     }
 
     pub fn is_blocklisted(env: Env, addr: Address) -> bool {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         Self::blocklist(&env).contains(&addr)
     }
 
     pub fn pause(env: Env) {
         Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let mut rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
         rules.paused = true;
         env.storage().instance().set(&DataKey::Rules, &rules);
@@ -106,6 +113,7 @@ impl ComplianceEngine {
 
     pub fn unpause(env: Env) {
         Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let mut rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
         rules.paused = false;
         env.storage().instance().set(&DataKey::Rules, &rules);
@@ -117,6 +125,7 @@ impl ComplianceEngine {
     /// Called by asset tokens before every transfer. Returns true if the
     /// transfer is compliant with all configured rules.
     pub fn can_transfer(env: Env, from: Address, to: Address, amount: i128) -> bool {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
 
         if rules.paused {
@@ -171,6 +180,7 @@ impl ComplianceEngine {
 
     /// Called by rwa-token after a mint or transfer to register a new holder.
     pub fn register_holder(env: Env, addr: Address) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let key = DataKey::HolderSince(addr.clone());
         let is_new = !env.storage().persistent().has(&key);
         env.storage()
@@ -191,6 +201,7 @@ impl ComplianceEngine {
 
     /// Called by rwa-token after a transfer or burn that removes the last token from a holder.
     pub fn unregister_holder(env: Env, addr: Address) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let key = DataKey::HolderSince(addr.clone());
         if env.storage().persistent().has(&key) {
             env.storage().persistent().remove(&key);
@@ -207,6 +218,7 @@ impl ComplianceEngine {
     }
 
     pub fn holder_count(env: Env) -> u32 {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         env.storage()
             .instance()
             .get(&DataKey::HolderCount)
