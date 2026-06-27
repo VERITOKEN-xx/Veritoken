@@ -232,6 +232,7 @@ impl CarbonCreditToken {
     ) -> RetirementReceipt {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         retiree.require_auth();
+        Self::require_kyc(&env, &retiree);
         let bal = Self::read_balance(&env, retiree.clone());
         if bal < amount {
             panic_with_error!(env, CarbonError::InsufficientBalance);
