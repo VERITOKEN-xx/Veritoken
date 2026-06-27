@@ -203,3 +203,43 @@ fn test_accept_admin_fails_when_no_pending() {
     let res = client.try_accept_admin();
     assert!(res.is_err());
 }
+
+#[test]
+fn test_approve_batch() {
+    let (env, client, _admin) = setup();
+    let verifier = Address::generate(&env);
+    let subject1 = Address::generate(&env);
+    let subject2 = Address::generate(&env);
+    let subject3 = Address::generate(&env);
+    client.add_verifier(&verifier);
+
+    let mut batch = Vec::new(&env);
+    batch.push_back((subject1.clone(), 0, 0, String::from_str(&env, "US")));
+    batch.push_back((subject2.clone(), 1, 2_000, String::from_str(&env, "UK")));
+    batch.push_back((subject3.clone(), 2, 3_000, String::from_str(&env, "CA")));
+    
+    client.approve_batch(&verifier, &batch);
+    
+    assert!(client.is_approved(&subject1));
+    assert!(client.is_approved(&subject2));
+    assert!(client.is_approved(&subject3));
+    assert_eq!(client.get_tier(&subject1), 0);
+    assert_eq!(client.get_tier(&subject2), 1);
+    assert_eq!(client.get_tier(&subject3), 2);
+}
+
+#[test]
+fn test_approve_batch_exceeds_limit() {
+    let (env, client, _admin) = setup();
+    let verifier = Address::generate(&env);
+    client.add_verifier(&verifier);
+
+    let mut batch = Vec::new(&env);
+    for i in 0..21 {
+        let subject = Address::generate(&env);
+        batch.push_back((subject, 0, 0, String::from_str(&env, "US")));
+    }
+    
+    let res = client.try_approve_batch(&verifier, &batch);
+    assert!(res.is_err());
+}

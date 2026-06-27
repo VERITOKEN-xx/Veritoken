@@ -190,6 +190,27 @@ impl KycRegistry {
             .publish((symbol_short!("approved"), subject), verifier);
     }
 
+    pub fn approve_batch(env: Env, verifier: Address, subjects: Vec<(Address, u32, u64, String)>) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        verifier.require_auth();
+        Self::require_verifier(&env, &verifier);
+        if subjects.len() > 20 {
+            panic!("batch too large");
+        }
+        for (subject, tier, expiry, jurisdiction) in subjects.iter() {
+            let record = KycRecord {
+                status: KycStatus::Approved,
+                verifier: verifier.clone(),
+                tier: *tier,
+                expiry: *expiry,
+                jurisdiction: jurisdiction.clone(),
+            };
+            Self::write_record(&env, subject.clone(), record);
+            env.events()
+                .publish((symbol_short!("approved"), subject.clone()), verifier.clone());
+        }
+    }
+
     pub fn reject(env: Env, verifier: Address, subject: Address) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         verifier.require_auth();
