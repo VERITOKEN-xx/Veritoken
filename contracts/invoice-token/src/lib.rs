@@ -90,6 +90,28 @@ impl InvoiceToken {
         panic!("already initialized");
     }
 
+    // ── Admin ─────────────────────────────────────────────────────────────────
+
+    pub fn update_kyc_registry(env: Env, new_registry: Address) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::KycRegistry, &new_registry);
+        env.events()
+            .publish((symbol_short!("upd_kyc"),), new_registry);
+    }
+
+    pub fn update_compliance_engine(env: Env, new_engine: Address) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::ComplianceEngine, &new_engine);
+        env.events()
+            .publish((symbol_short!("upd_ce"),), new_engine);
+    }
+
     // ── Metadata ─────────────────────────────────────────────────────────────
 
     pub fn get_meta(env: Env) -> InvoiceMeta {
@@ -128,6 +150,7 @@ impl InvoiceToken {
         env.storage()
             .persistent()
             .extend_ttl(&DataKey::Balance(to.clone()), THRESHOLD, BUMP);
+        Self::register_holder(&env, &to);
         let supply: i128 = env
             .storage()
             .instance()
@@ -136,8 +159,6 @@ impl InvoiceToken {
         env.storage()
             .instance()
             .set(&DataKey::TotalSupply, &(supply + amount));
-        
-        Self::register_holder(&env, &to);
 
         env.events().publish((symbol_short!("issued"), to), amount);
     }
@@ -160,7 +181,7 @@ impl InvoiceToken {
         {
             panic!("invoice not yet settled");
         }
-        Self::check_redeem_compliance(&env, &from);
+        Self::check_redeem_compliance(&env, &from, amount);
         let bal = Self::read_balance(&env, from.clone());
         if bal < amount {
             panic!("insufficient balance");
@@ -186,7 +207,12 @@ impl InvoiceToken {
 
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
         from.require_auth();
-        if env.storage().instance().get::<DataKey, bool>(&DataKey::Settled).unwrap_or(false) {
+        if env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::Settled)
+            .unwrap_or(false)
+        {
             panic!("invoice already settled");
         }
         if amount < 0 {
@@ -200,21 +226,41 @@ impl InvoiceToken {
         if from_bal < amount {
             panic!("insufficient balance");
         }
-        env.storage().persistent().set(&DataKey::Balance(from.clone()), &(from_bal - amount));
-        
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(from.clone()), &(from_bal - amount));
+
         let to_bal = Self::read_balance(&env, to.clone());
-        env.storage().persistent().set(&DataKey::Balance(to.clone()), &(to_bal + amount));
-        
-        env.storage().persistent().extend_ttl(&DataKey::Balance(from.clone()), THRESHOLD, BUMP);
-        env.storage().persistent().extend_ttl(&DataKey::Balance(to.clone()), THRESHOLD, BUMP);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(to.clone()), &(to_bal + amount));
+
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Balance(from.clone()), THRESHOLD, BUMP);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Balance(to.clone()), THRESHOLD, BUMP);
 
         Self::register_holder(&env, &to);
-        env.events().publish((symbol_short!("transfer"), from, to), amount);
+        env.events()
+            .publish((symbol_short!("transfer"), from, to), amount);
     }
 
-    pub fn transfer_from(env: Env, spender: Address, from: Address, to: Address, amount: i128) {
+    pub fn transfer_from(
+        env: Env,
+        spender: Address,
+        from: Address,
+        to: Address,
+        amount: i128,
+    ) {
         spender.require_auth();
-        if env.storage().instance().get::<DataKey, bool>(&DataKey::Settled).unwrap_or(false) {
+        if env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::Settled)
+            .unwrap_or(false)
+        {
             panic!("invoice already settled");
         }
         if amount < 0 {
@@ -231,38 +277,69 @@ impl InvoiceToken {
         if allowance.expiration_ledger < env.ledger().sequence() {
             panic!("allowance expired");
         }
-        
+
         let new_allowance = AllowanceValue {
             amount: allowance.amount - amount,
             expiration_ledger: allowance.expiration_ledger,
         };
-        env.storage().persistent().set(&DataKey::Allowance(from.clone(), spender.clone()), &new_allowance);
+        env.storage().persistent().set(
+            &DataKey::Allowance(from.clone(), spender.clone()),
+            &new_allowance,
+        );
 
         let from_bal = Self::read_balance(&env, from.clone());
         if from_bal < amount {
             panic!("insufficient balance");
         }
-        env.storage().persistent().set(&DataKey::Balance(from.clone()), &(from_bal - amount));
-        
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(from.clone()), &(from_bal - amount));
+
         let to_bal = Self::read_balance(&env, to.clone());
-        env.storage().persistent().set(&DataKey::Balance(to.clone()), &(to_bal + amount));
-        
-        env.storage().persistent().extend_ttl(&DataKey::Balance(from.clone()), THRESHOLD, BUMP);
-        env.storage().persistent().extend_ttl(&DataKey::Balance(to.clone()), THRESHOLD, BUMP);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Balance(to.clone()), &(to_bal + amount));
+
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Balance(from.clone()), THRESHOLD, BUMP);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Balance(to.clone()), THRESHOLD, BUMP);
 
         Self::register_holder(&env, &to);
-        env.events().publish((symbol_short!("transfer"), from, to), amount);
+        env.events()
+            .publish((symbol_short!("transfer"), from, to), amount);
     }
 
-    pub fn approve(env: Env, from: Address, spender: Address, amount: i128, expiration_ledger: u32) {
+    pub fn approve(
+        env: Env,
+        from: Address,
+        spender: Address,
+        amount: i128,
+        expiration_ledger: u32,
+    ) {
         from.require_auth();
         if amount < 0 {
             panic!("negative amount");
         }
-        let allowance = AllowanceValue { amount, expiration_ledger };
-        env.storage().persistent().set(&DataKey::Allowance(from.clone(), spender.clone()), &allowance);
-        env.storage().persistent().extend_ttl(&DataKey::Allowance(from.clone(), spender.clone()), THRESHOLD, BUMP);
-        env.events().publish((symbol_short!("approve"), from, spender), (amount, expiration_ledger));
+        let allowance = AllowanceValue {
+            amount,
+            expiration_ledger,
+        };
+        env.storage().persistent().set(
+            &DataKey::Allowance(from.clone(), spender.clone()),
+            &allowance,
+        );
+        env.storage().persistent().extend_ttl(
+            &DataKey::Allowance(from.clone(), spender.clone()),
+            THRESHOLD,
+            BUMP,
+        );
+        env.events().publish(
+            (symbol_short!("approve"), from, spender),
+            (amount, expiration_ledger),
+        );
     }
 
     pub fn allowance(env: Env, from: Address, spender: Address) -> i128 {
@@ -303,18 +380,15 @@ impl InvoiceToken {
         }
     }
 
-    fn check_redeem_compliance(env: &Env, holder: &Address) {
+    fn check_redeem_compliance(env: &Env, holder: &Address, amount: i128) {
         let engine: Address = env
             .storage()
             .instance()
             .get(&DataKey::ComplianceEngine)
             .unwrap();
         let client = ComplianceEngineClient::new(env, &engine);
-        if client.get_rules().paused {
-            panic!("redemption blocked by compliance pause");
-        }
-        if client.is_blocklisted(holder) {
-            panic!("redemption blocked for blocklisted holder");
+        if !client.can_transfer(holder, holder, &amount) {
+            panic!("redemption blocked by compliance");
         }
     }
 
@@ -329,11 +403,18 @@ impl InvoiceToken {
         env.storage()
             .persistent()
             .get(&DataKey::Allowance(from, spender))
-            .unwrap_or(AllowanceValue { amount: 0, expiration_ledger: 0 })
+            .unwrap_or(AllowanceValue {
+                amount: 0,
+                expiration_ledger: 0,
+            })
     }
 
     fn require_compliance(env: &Env, from: &Address, to: &Address, amount: i128) {
-        let engine: Address = env.storage().instance().get(&DataKey::ComplianceEngine).unwrap();
+        let engine: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::ComplianceEngine)
+            .unwrap();
         let client = ComplianceEngineClient::new(env, &engine);
         if !client.can_transfer(from, to, &amount) {
             panic!("transfer rejected by compliance engine");
@@ -341,7 +422,11 @@ impl InvoiceToken {
     }
 
     fn register_holder(env: &Env, addr: &Address) {
-        let engine: Address = env.storage().instance().get(&DataKey::ComplianceEngine).unwrap();
+        let engine: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::ComplianceEngine)
+            .unwrap();
         let client = ComplianceEngineClient::new(env, &engine);
         client.register_holder(addr);
     }
@@ -361,14 +446,14 @@ mod compliance_iface {
     #[contractclient(name = "ComplianceEngineClient")]
     #[allow(dead_code)]
     pub trait ComplianceEngine {
-        fn get_rules(env: soroban_sdk::Env) -> super::compliance_engine::ComplianceRules;
+        fn get_rules(env: soroban_sdk::Env) -> super::compliance_engine_types::ComplianceRules;
         fn is_blocklisted(env: soroban_sdk::Env, addr: Address) -> bool;
         fn can_transfer(env: soroban_sdk::Env, from: Address, to: Address, amount: i128) -> bool;
         fn register_holder(env: soroban_sdk::Env, addr: Address);
     }
 }
 
-mod compliance_engine {
+mod compliance_engine_types {
     use soroban_sdk::contracttype;
 
     #[contracttype]

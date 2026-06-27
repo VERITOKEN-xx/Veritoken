@@ -158,6 +158,28 @@ fn test_redeem_insufficient_balance() {
 }
 
 #[test]
+fn test_redeem_blocked_when_compliance_paused() {
+    let h = setup();
+    let holder = Address::generate(&h.env);
+    h.approve_kyc(&holder);
+    h.token.issue(&holder, &1_000);
+    h.token.settle();
+    h.compliance.pause();
+    assert!(h.token.try_redeem(&holder, &500).is_err());
+}
+
+#[test]
+fn test_redeem_blocked_for_blocklisted_holder() {
+    let h = setup();
+    let holder = Address::generate(&h.env);
+    h.approve_kyc(&holder);
+    h.token.issue(&holder, &1_000);
+    h.token.settle();
+    h.compliance.add_to_blocklist(&holder);
+    assert!(h.token.try_redeem(&holder, &500).is_err());
+}
+
+#[test]
 fn test_non_deployer_cannot_reinitialize() {
     let h = setup();
     let attacker = Address::generate(&h.env);
@@ -168,4 +190,76 @@ fn test_non_deployer_cannot_reinitialize() {
         .token
         .try_initialize(&attacker, &kyc_id, &ce_id, &meta(&h.env));
     assert!(result.is_err());
+}
+
+// ── update_kyc_registry / update_compliance_engine tests ─────────────────────
+
+#[test]
+fn test_update_kyc_registry_admin_only() {
+    let h = setup();
+    let new_kyc = Address::generate(&h.env);
+
+    // Non-admin: separate env, no auths mocked
+    {
+        let env2 = Env::default();
+        let non_admin = Address::generate(&env2);
+        let token_id2 = env2.register(
+            InvoiceToken,
+            (
+                non_admin.clone(),
+                Address::generate(&env2),
+                Address::generate(&env2),
+                meta(&env2),
+            ),
+        );
+        let client2 = InvoiceTokenClient::new(&env2, &token_id2);
+        assert!(client2.try_update_kyc_registry(&Address::generate(&env2)).is_err());
+    }
+
+    // Admin succeeds and the stored address is updated
+    h.token.update_kyc_registry(&new_kyc);
+
+    // Confirm the new registry is in effect: issuing to an already-KYC'd
+    // address now fails because the new registry has no approvals.
+    let holder = Address::generate(&h.env);
+    h.approve_kyc(&holder); // approved in OLD registry
+    assert!(h.token.try_issue(&holder, &1).is_err());
+}
+
+#[test]
+fn test_update_compliance_engine_admin_only() {
+    let h = setup();
+
+    // Non-admin: separate env, no auths mocked
+    {
+        let env2 = Env::default();
+        let non_admin = Address::generate(&env2);
+        let token_id2 = env2.register(
+            InvoiceToken,
+            (
+                non_admin.clone(),
+                Address::generate(&env2),
+                Address::generate(&env2),
+                meta(&env2),
+            ),
+        );
+        let client2 = InvoiceTokenClient::new(&env2, &token_id2);
+        assert!(client2.try_update_compliance_engine(&Address::generate(&env2)).is_err());
+    }
+
+    // Admin can update; subsequent compliance checks use the new engine.
+    // Deploy a second paused compliance engine.
+    let ce2_id = h.env.register(ComplianceEngine, ());
+    let ce2 = ComplianceEngineClient::new(&h.env, &ce2_id);
+    ce2.initialize(&h.admin);
+    ce2.pause();
+
+    h.token.update_compliance_engine(&ce2_id);
+
+    let holder = Address::generate(&h.env);
+    h.approve_kyc(&holder);
+    h.token.issue(&holder, &100); // issue bypasses compliance check (not a transfer)
+    h.token.settle();
+    // Redemption checks compliance engine for pause/blocklist — must now fail.
+    assert!(h.token.try_redeem(&holder, &50).is_err());
 }
