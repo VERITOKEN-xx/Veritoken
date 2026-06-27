@@ -1,6 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useWallet } from "../lib/wallet";
+import { useNetworkStore, type Network } from "../lib/networkStore";
+import { getNetworkRpcUrl, getNetworkPassphrase } from "../lib/stellar";
+import { Networks } from "@stellar/stellar-sdk";
 
 const NAV = [
   { to: "/", label: "Dashboard" },
@@ -14,9 +17,15 @@ const NAV = [
 export default function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const { address, connected, connect, disconnect } = useWallet();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { network, setNetwork } = useNetworkStore();
 
-  const closeMenu = () => setMenuOpen(false);
+  const handleNetworkChange = (newNetwork: Network) => {
+    setNetwork(newNetwork);
+    // Clear wallet connection state
+    disconnect();
+    // Reload the page to reinitialize with new network
+    window.location.reload();
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
@@ -26,7 +35,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             <img src="/veritoken.svg" alt="" width={34} height={34} style={{ borderRadius: 9 }} />
             <span style={styles.brandName}>Veritoken</span>
             <span className="badge badge-accent" style={{ marginLeft: "0.4rem" }}>
-              Testnet
+              {network === "mainnet" ? "Mainnet" : "Testnet"}
             </span>
           </Link>
 
@@ -46,6 +55,22 @@ export default function Layout({ children }: { children: ReactNode }) {
           </nav>
 
           <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+              <button
+                onClick={() => handleNetworkChange("testnet")}
+                className={network === "testnet" ? "btn-accent" : "btn-ghost"}
+                style={{ fontSize: "0.75rem", padding: "0.4rem 0.8rem" }}
+              >
+                Testnet
+              </button>
+              <button
+                onClick={() => handleNetworkChange("mainnet")}
+                className={network === "mainnet" ? "btn-accent" : "btn-ghost"}
+                style={{ fontSize: "0.75rem", padding: "0.4rem 0.8rem" }}
+              >
+                Mainnet
+              </button>
+            </div>
             {connected ? (
               <div style={styles.walletInfo}>
                 <span style={styles.address} className="mono">

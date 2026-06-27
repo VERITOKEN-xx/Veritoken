@@ -169,6 +169,20 @@ impl PropertyToken {
             .expect("property meta must be set")
     }
 
+    pub fn update_meta(env: Env, new_meta: PropertyMeta) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        Self::require_admin(&env);
+        let current = Self::get_meta(env.clone());
+        // Cannot change structural fields
+        if new_meta.property_id != current.property_id || new_meta.total_shares != current.total_shares {
+            panic!("Cannot change property_id or total_shares");
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::PropertyMeta, &new_meta);
+        env.events().publish((symbol_short!("meta_upd"),), ());
+    }
+
     pub fn name(env: Env) -> String {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         String::from_str(&env, "Veritoken Property")
@@ -246,6 +260,43 @@ impl PropertyToken {
         }
         env.events()
             .publish((symbol_short!("transfer"), from, to), shares);
+    }
+
+    /// Admin-initiated buyback (forced redemption) of shares from a holder.
+    /// Snapshots dividends before burning. Requires holder to have active KYC.
+    /// Decreases total minted shares. Emits a buyback event.
+    pub fn buyback(env: Env, from: Address, shares: i128) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        Self::require_admin(&env);
+        Self::require_kyc(&env, &from);
+        if shares <= 0 {
+            panic_with_error!(env, PropertyError::NegativeShares);
+        }
+        // Snapshot accrued dividends before balance changes
+        Self::accrue(&env, from.clone());
+        let balance = Self::read_balance(&env, from.clone());
+        if balance < shares {
+            panic_with_error!(env, PropertyError::InsufficientShares);
+        }
+        // Decrease holder's balance (burn shares)
+        Self::write_balance(&env, from.clone(), balance - shares);
+        // Decrease total minted shares
+        let total: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalShares, &(total - shares));
+        // Reset debt for the holder (new balance basis for future dividends)
+        Self::reset_debt(&env, from.clone());
+        // Remove holder if balance is now zero
+        if balance == shares {
+            Self::remove_holder_local(&env, &from);
+        }
+        // Emit buyback event
+        env.events().publish((symbol_short!("buyback"),), (from, shares));
     }
 
     // ── SEP-41 Allowance / Delegated Transfer ───────────────────────────────
