@@ -559,8 +559,6 @@ export default function CarbonPage() {
               </button>
             </div>
           )}
-        </Card>
-      )}
 
       <RecentTransactions events={events} loading={eventsLoading} />
     </div>
