@@ -64,6 +64,22 @@ fn setup() -> Harness {
     }
 }
 
+#[test]
+fn test_issue_idempotency_holder_count() {
+    let h = setup();
+    let holder = Address::generate(&h.env);
+    h.approve_kyc(&holder);
+    
+    // First issue
+    h.token.issue(&holder, &1_000);
+    assert_eq!(h.compliance.holder_count(), 1);
+    
+    // Second issue
+    h.token.issue(&holder, &500);
+    assert_eq!(h.compliance.holder_count(), 1);
+    assert_eq!(h.token.balance(&holder), 1_500);
+}
+
 impl Harness {
     fn approve_kyc(&self, addr: &Address) {
         self.kyc.approve(
