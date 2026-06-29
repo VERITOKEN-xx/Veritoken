@@ -154,7 +154,7 @@ impl ComplianceEngine {
     pub fn add_blocked_jurisdiction(env: Env, jurisdiction: String) {
         Self::require_admin(&env);
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        let mut list = Self::blocked_jurisdictions(&env);
+        let mut list = Self::get_blocked_jurisdictions(env.clone());
         if !list.contains(&jurisdiction) {
             list.push_back(jurisdiction.clone());
         }
@@ -168,7 +168,7 @@ impl ComplianceEngine {
     pub fn remove_blocked_jurisdiction(env: Env, jurisdiction: String) {
         Self::require_admin(&env);
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        let list = Self::blocked_jurisdictions(&env);
+        let list = Self::get_blocked_jurisdictions(env.clone());
         let mut new_list: Vec<String> = Vec::new(&env);
         for j in list.iter() {
             if j != jurisdiction {
@@ -184,7 +184,10 @@ impl ComplianceEngine {
 
     pub fn get_blocked_jurisdictions(env: Env) -> Vec<String> {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        Self::blocked_jurisdictions(&env)
+        env.storage()
+            .instance()
+            .get(&DataKey::BlockedJurisdictions)
+            .unwrap_or_else(|| Vec::new(&env))
     }
 
     pub fn pause(env: Env) {
@@ -222,7 +225,7 @@ impl ComplianceEngine {
             return false;
         }
 
-        let blocked_jurisdictions = Self::blocked_jurisdictions(&env);
+        let blocked_jurisdictions = Self::get_blocked_jurisdictions(env.clone());
         if !blocked_jurisdictions.is_empty() {
             let kyc_registry: Address = env
                 .storage()

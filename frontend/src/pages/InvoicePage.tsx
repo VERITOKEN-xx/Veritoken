@@ -19,6 +19,7 @@ export default function InvoicePage() {
     due_date: "",
     currency: "USD",
     ipfs_doc_hash: "",
+    notification_webhook: "",
   });
   const [events, setEvents] = useState<ContractEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -64,6 +65,7 @@ export default function InvoicePage() {
         due_date: "",
         currency: "USD",
         ipfs_doc_hash: "",
+        notification_webhook: "",
       });
     } catch (err) {
       addToast(
@@ -147,6 +149,13 @@ export default function InvoicePage() {
               value={form.ipfs_doc_hash}
               onChange={handleChange}
               placeholder="bafyrei…"
+            />
+            <Field
+              label="Notification Webhook (optional)"
+              name="notification_webhook"
+              value={form.notification_webhook}
+              onChange={handleChange}
+              placeholder="https://your-service.com/webhook"
             />
             <button
               type="submit"
