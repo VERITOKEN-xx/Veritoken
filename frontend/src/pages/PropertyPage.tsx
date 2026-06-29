@@ -115,6 +115,16 @@ export default function PropertyPage() {
       .then(setEvents)
       .catch(() => {})
       .finally(() => setEventsLoading(false));
+
+    Promise.all([
+      contracts.property.holderCount(),
+      contracts.property.holderSlotsRemaining(),
+    ])
+      .then(([count, slots]) => {
+        setHolderCount(count);
+        setHolderSlotsRemaining(slots);
+      })
+      .catch(() => {});
   }, []);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
