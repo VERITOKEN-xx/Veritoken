@@ -48,6 +48,7 @@ pub enum DataKey {
     HolderCount,
     DividendDeposit(u32),
     DividendDepositCount,
+    MintedShares,
 }
 
 #[contracttype]
@@ -251,6 +252,8 @@ impl PropertyToken {
         Self::reset_debt(&env, to.clone());
         Self::register_holder(&env, &to);
         Self::add_holder_local(&env, &to);
+        let minted: i128 = env.storage().instance().get(&DataKey::MintedShares).unwrap_or(0);
+        env.storage().instance().set(&DataKey::MintedShares, &(minted + shares));
         env.events().publish((symbol_short!("mint"), to), shares);
     }
 
@@ -317,6 +320,8 @@ impl PropertyToken {
         if balance == shares {
             Self::remove_holder_local(&env, &from);
         }
+        let minted: i128 = env.storage().instance().get(&DataKey::MintedShares).unwrap_or(0);
+        env.storage().instance().set(&DataKey::MintedShares, &(minted - shares));
         // Emit buyback event
         env.events().publish((symbol_short!("buyback"),), (from, shares));
     }
@@ -548,6 +553,36 @@ impl PropertyToken {
             .instance()
             .get(&DataKey::TotalShares)
             .unwrap_or(0)
+    }
+
+    /// Returns the net asset value per share (total_valuation_usd / minted_shares).
+    /// Returns 0 if no shares have been minted.
+    pub fn nav_per_share(env: Env) -> i128 {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let minted: i128 = env.storage().instance().get(&DataKey::MintedShares).unwrap_or(0);
+        if minted == 0 {
+            return 0;
+        }
+        let meta = Self::get_meta(env);
+        meta.total_valuation_usd / minted
+    }
+
+    /// Admin-only: update the property's total_valuation_usd. Emits a `revalued` event.
+    pub fn update_valuation(env: Env, new_valuation_usd: i128) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        Self::require_admin(&env);
+        if new_valuation_usd <= 0 {
+            panic!("new_valuation_usd must be positive");
+        }
+        let mut meta: PropertyMeta = env
+            .storage()
+            .instance()
+            .get(&DataKey::PropertyMeta)
+            .expect("property meta must be set");
+        let old_valuation = meta.total_valuation_usd;
+        meta.total_valuation_usd = new_valuation_usd;
+        env.storage().instance().set(&DataKey::PropertyMeta, &meta);
+        env.events().publish((symbol_short!("revalued"),), (old_valuation, new_valuation_usd));
     }
 
     pub fn version(env: Env) -> String {

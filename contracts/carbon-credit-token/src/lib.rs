@@ -54,6 +54,8 @@ pub struct ProjectMeta {
     pub country: String,
     pub verifier: String,
     pub ipfs_cert_hash: String, // verification certificate
+    pub registry_url: String,
+    pub registry_project_id: String,
 }
 
 #[contracttype]
@@ -391,6 +393,10 @@ impl CarbonCreditToken {
         push_soroban_str(&mut out, &receipt.beneficiary);
         out.extend_from_slice(b"\",\"retirement_reason\":\"");
         push_soroban_str(&mut out, &receipt.retirement_reason);
+        out.extend_from_slice(b"\",\"registry_url\":\"");
+        push_soroban_str(&mut out, &meta.registry_url);
+        out.extend_from_slice(b"\",\"registry_project_id\":\"");
+        push_soroban_str(&mut out, &meta.registry_project_id);
         out.extend_from_slice(b"\"}");
 
         String::from_bytes(&env, &out)
@@ -413,6 +419,13 @@ impl CarbonCreditToken {
             .instance()
             .get(&DataKey::TotalRetired)
             .unwrap_or(0)
+    }
+
+    /// Returns `(registry_url, registry_project_id)` for external verification.
+    pub fn get_registry_link(env: Env) -> (String, String) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let meta: ProjectMeta = env.storage().instance().get(&DataKey::ProjectMeta).unwrap();
+        (meta.registry_url, meta.registry_project_id)
     }
 
     pub fn version(env: Env) -> String {
