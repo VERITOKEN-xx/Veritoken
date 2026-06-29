@@ -41,12 +41,13 @@ pub enum DataKey {
     PendingAdmin,
     KycRegistry,
     ComplianceEngine,
-    InvoiceMeta,
-    Balance(Address),
-    Allowance(Address, Address),
-    TotalSupply,
-    Settled,
-    SettlementAmount,
+    InvoiceMeta(String),
+    Balance(Address, String),
+    Allowance(Address, Address, String),
+    TotalSupply(String),
+    Settled(String),
+    SettlementAmount(String),
+    InvoicesList,
 }
 
 #[contracttype]
@@ -200,6 +201,7 @@ impl InvoiceToken {
     /// Replace stored invoice metadata. Admin-only; panics if already settled.
     pub fn update_meta(env: Env, invoice_id: String, new_meta: InvoiceMeta) {
         Self::require_admin(&env);
+        Self::validate_currency(&new_meta.currency);
         if env
             .storage()
             .persistent()
@@ -270,50 +272,73 @@ impl InvoiceToken {
             .publish((symbol_short!("issued"), to), (invoice_id, amount));
     }
 
-    /// Mark invoice as fully settled; equivalent to partial_settle(face_value_usd).
-    pub fn settle(env: Env) {
+    /// Mark invoice as fully settled; sets settlement_amount to face_value_usd.
+    pub fn settle(env: Env, invoice_id: String) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         Self::require_admin(&env);
-        let meta: InvoiceMeta = env.storage().instance().get(&DataKey::InvoiceMeta).unwrap();
-        env.storage().instance().set(&DataKey::Settled, &true);
+        let meta: InvoiceMeta = env
+            .storage()
+            .persistent()
+            .get(&DataKey::InvoiceMeta(invoice_id.clone()))
+            .expect("invoice not found");
         env.storage()
-            .instance()
-            .set(&DataKey::SettlementAmount, &meta.face_value_usd);
-        env.events().publish((symbol_short!("settled"),), ());
+            .persistent()
+            .set(&DataKey::Settled(invoice_id.clone()), &true);
+        env.storage()
+            .persistent()
+            .set(&DataKey::SettlementAmount(invoice_id.clone()), &meta.face_value_usd);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Settled(invoice_id.clone()), THRESHOLD, BUMP);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::SettlementAmount(invoice_id.clone()), THRESHOLD, BUMP);
+        env.events().publish((symbol_short!("settled"),), invoice_id);
     }
 
     /// Mark invoice as partially settled with the given payment amount.
-    /// Enables proportional redemption: each holder may redeem up to
-    /// `balance * settlement_amount / total_supply` tokens.
-    pub fn partial_settle(env: Env, settlement_amount: i128) {
+    /// Each holder may redeem up to `balance * settlement_amount / face_value_usd` tokens.
+    pub fn partial_settle(env: Env, invoice_id: String, settlement_amount: i128) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         Self::require_admin(&env);
         if settlement_amount <= 0 {
             panic!("settlement_amount must be positive");
         }
-        let meta: InvoiceMeta = env.storage().instance().get(&DataKey::InvoiceMeta).unwrap();
+        let meta: InvoiceMeta = env
+            .storage()
+            .persistent()
+            .get(&DataKey::InvoiceMeta(invoice_id.clone()))
+            .expect("invoice not found");
         if settlement_amount > meta.face_value_usd {
             panic!("settlement_amount exceeds face value");
         }
-        env.storage().instance().set(&DataKey::Settled, &true);
         env.storage()
-            .instance()
-            .set(&DataKey::SettlementAmount, &settlement_amount);
+            .persistent()
+            .set(&DataKey::Settled(invoice_id.clone()), &true);
+        env.storage()
+            .persistent()
+            .set(&DataKey::SettlementAmount(invoice_id.clone()), &settlement_amount);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::Settled(invoice_id.clone()), THRESHOLD, BUMP);
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::SettlementAmount(invoice_id.clone()), THRESHOLD, BUMP);
         env.events()
-            .publish((symbol_short!("p_settld"),), settlement_amount);
+            .publish((symbol_short!("p_settld"),), (invoice_id, settlement_amount));
     }
 
-    pub fn settlement_amount(env: Env) -> i128 {
+    pub fn settlement_amount(env: Env, invoice_id: String) -> i128 {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         env.storage()
-            .instance()
-            .get(&DataKey::SettlementAmount)
+            .persistent()
+            .get(&DataKey::SettlementAmount(invoice_id))
             .unwrap_or(0)
     }
 
     /// Burn tokens upon settlement / redemption.
-    /// Redemption is limited to the holder's proportional share of the settled amount.
-    pub fn redeem(env: Env, from: Address, amount: i128) {
+    /// Redemption is limited to `balance * settlement_amount / face_value_usd` tokens.
+    pub fn redeem(env: Env, invoice_id: String, from: Address, amount: i128) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         from.require_auth();
         if !env
@@ -331,25 +356,31 @@ impl InvoiceToken {
         }
         let settlement: i128 = env
             .storage()
-            .instance()
-            .get(&DataKey::SettlementAmount)
+            .persistent()
+            .get(&DataKey::SettlementAmount(invoice_id.clone()))
             .unwrap_or(0);
         if settlement > 0 {
-            let total_supply: i128 = env
+            let meta: InvoiceMeta = env
                 .storage()
-                .instance()
-                .get(&DataKey::TotalSupply)
-                .unwrap_or(0);
-            if total_supply > 0 {
-                let max_redeemable = bal * settlement / total_supply;
+                .persistent()
+                .get(&DataKey::InvoiceMeta(invoice_id.clone()))
+                .expect("invoice not found");
+            if meta.face_value_usd > 0 {
+                let max_redeemable = bal * settlement / meta.face_value_usd;
                 if amount > max_redeemable {
                     panic!("exceeds proportional settlement");
                 }
             }
         }
-        env.storage()
-            .persistent()
-            .set(&DataKey::Balance(from.clone()), &(bal - amount));
+        env.storage().persistent().set(
+            &DataKey::Balance(from.clone(), invoice_id.clone()),
+            &(bal - amount),
+        );
+        env.storage().persistent().extend_ttl(
+            &DataKey::Balance(from.clone(), invoice_id.clone()),
+            THRESHOLD,
+            BUMP,
+        );
         let supply: i128 = env
             .storage()
             .persistent()
@@ -645,9 +676,28 @@ impl InvoiceToken {
         String::from_str(&env, env!("CARGO_PKG_VERSION"))
     }
 
+    /// Returns the discounted present value of an invoice in stroops.
+    /// Formula: `face_value - (face_value * discount_rate_bps * days_to_maturity) / (365 * 10_000)`.
+    /// Clamped to 0 if the result is negative (heavily discounted or very long maturity).
+    pub fn present_value(env: Env, invoice_id: String) -> i128 {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let meta: InvoiceMeta = env
+            .storage()
+            .persistent()
+            .get(&DataKey::InvoiceMeta(invoice_id))
+            .expect("invoice not found");
+        let now = env.ledger().timestamp();
+        let days_to_maturity = (meta.due_date.saturating_sub(now) / 86400) as i128;
+        let pv = meta.face_value_usd
+            - (meta.face_value_usd * meta.discount_rate_bps as i128 * days_to_maturity)
+                / (365 * 10_000);
+        pv.max(0)
+    }
+
     // ── Internals ────────────────────────────────────────────────────────────
 
     fn do_create_invoice(env: &Env, meta: InvoiceMeta) {
+        Self::validate_currency(&meta.currency);
         let invoice_id = meta.invoice_id.clone();
         if env
             .storage()
@@ -692,6 +742,19 @@ impl InvoiceToken {
             .get(&DataKey::Admin)
             .expect("admin must be set");
         admin.require_auth();
+    }
+
+    fn validate_currency(currency: &String) {
+        if currency.len() != 3 {
+            panic!("currency must be ISO 4217 (3 uppercase letters)");
+        }
+        let mut bytes = [0u8; 3];
+        currency.copy_into_slice(&mut bytes);
+        for b in bytes {
+            if b < b'A' || b > b'Z' {
+                panic!("currency must be ISO 4217 (3 uppercase letters)");
+            }
+        }
     }
 
     fn require_kyc(env: &Env, addr: &Address) {

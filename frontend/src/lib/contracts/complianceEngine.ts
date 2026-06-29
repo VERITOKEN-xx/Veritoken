@@ -15,6 +15,7 @@ import {
   fetchSequence,
   toAddress,
   toI128,
+  toU32,
   type SignTx,
 } from "./base";
 import { nativeToScVal, xdr } from "@stellar/stellar-sdk";
@@ -86,6 +87,19 @@ export class ComplianceEngineClient {
   /** Returns the current count of registered holders. */
   async holderCount(): Promise<number> {
     return readCall<number>(this.server, this.contractId, "holder_count", []);
+  }
+
+  /** Returns the number of addresses currently on the blocklist. */
+  async blocklistCount(): Promise<number> {
+    return readCall<number>(this.server, this.contractId, "blocklist_count", []);
+  }
+
+  /** Returns a page of blocklisted addresses (`limit` capped at 50 on-chain). */
+  async getBlocklist(start: number, limit: number): Promise<string[]> {
+    return readCall<string[]>(this.server, this.contractId, "get_blocklist", [
+      toU32(start),
+      toU32(limit),
+    ]);
   }
 
   // ── Write methods ─────────────────────────────────────────────────────────

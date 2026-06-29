@@ -26,6 +26,7 @@ pub enum DataKey {
     KycRegistry,
     Rules,
     Blocklist,
+    BlocklistCount,
     BlockedJurisdictions,
     MaxTransfer,
     MinHoldingPeriod,
@@ -126,6 +127,14 @@ impl ComplianceEngine {
         let mut list = Self::blocklist(&env);
         if !list.contains(&addr) {
             list.push_back(addr.clone());
+            let count: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::BlocklistCount)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::BlocklistCount, &(count + 1));
         }
         env.storage().instance().set(&DataKey::Blocklist, &list);
         env.events().publish((symbol_short!("blocked"),), addr);
@@ -136,17 +145,57 @@ impl ComplianceEngine {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let list = Self::blocklist(&env);
         let mut new_list: Vec<Address> = Vec::new(&env);
+        let mut removed = false;
         for a in list.iter() {
             if a != addr {
                 new_list.push_back(a);
+            } else {
+                removed = true;
             }
         }
         env.storage().instance().set(&DataKey::Blocklist, &new_list);
+        if removed {
+            let count: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::BlocklistCount)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::BlocklistCount, &count.saturating_sub(1));
+        }
     }
 
     pub fn is_blocklisted(env: Env, addr: Address) -> bool {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         Self::blocklist(&env).contains(&addr)
+    }
+
+    /// Returns the number of addresses currently on the blocklist.
+    pub fn blocklist_count(env: Env) -> u32 {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        env.storage()
+            .instance()
+            .get(&DataKey::BlocklistCount)
+            .unwrap_or(0)
+    }
+
+    /// Returns a page of blocklisted addresses. `limit` is capped at 50.
+    pub fn get_blocklist(env: Env, start: u32, limit: u32) -> Vec<Address> {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let list = Self::blocklist(&env);
+        let total = list.len();
+        let cap: u32 = 50;
+        let effective_limit = if limit > cap { cap } else { limit };
+        let mut result: Vec<Address> = Vec::new(&env);
+        if start >= total {
+            return result;
+        }
+        let end = (start + effective_limit).min(total);
+        for i in start..end {
+            result.push_back(list.get(i).unwrap());
+        }
+        result
     }
 
     // ── Jurisdiction blocklist ───────────────────────────────────────────────
@@ -342,6 +391,13 @@ impl ComplianceEngine {
         env.storage()
             .instance()
             .get(&DataKey::Blocklist)
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    fn blocked_jurisdictions(env: &Env) -> Vec<String> {
+        env.storage()
+            .instance()
+            .get(&DataKey::BlockedJurisdictions)
             .unwrap_or_else(|| Vec::new(env))
     }
 
