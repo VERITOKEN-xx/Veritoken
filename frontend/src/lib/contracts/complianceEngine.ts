@@ -34,6 +34,7 @@ function encodeRules(rules: ComplianceRules): xdr.ScVal {
       max_holders: rules.max_holders,
       require_same_jurisdiction: rules.require_same_jurisdiction,
       paused: rules.paused,
+      allowlist_mode: rules.allowlist_mode,
     },
     {
       type: {
@@ -42,6 +43,7 @@ function encodeRules(rules: ComplianceRules): xdr.ScVal {
         max_holders: ["u32"],
         require_same_jurisdiction: ["bool"],
         paused: ["bool"],
+        allowlist_mode: ["bool"],
       },
     }
   );
@@ -217,6 +219,51 @@ export class ComplianceEngineClient {
       "unregister_holder",
       [toAddress(addr)],
       callerAddress,
+      seq,
+      signTx
+    );
+  }
+
+  // ── Allowlist ─────────────────────────────────────────────────────────────
+
+  /** Returns true when `addr` is on the allowlist. */
+  async isAllowlisted(addr: string): Promise<boolean> {
+    return readCall<boolean>(this.server, this.contractId, "is_allowlisted", [
+      toAddress(addr),
+    ]);
+  }
+
+  /** Add `addr` to the allowlist. Admin-only on-chain. */
+  async addToAllowlist(
+    adminAddress: string,
+    addr: string,
+    signTx: SignTx
+  ): Promise<void> {
+    const seq = await fetchSequence(this.server, adminAddress);
+    return writeCall(
+      this.server,
+      this.contractId,
+      "add_to_allowlist",
+      [toAddress(addr)],
+      adminAddress,
+      seq,
+      signTx
+    );
+  }
+
+  /** Remove `addr` from the allowlist. Admin-only on-chain. */
+  async removeFromAllowlist(
+    adminAddress: string,
+    addr: string,
+    signTx: SignTx
+  ): Promise<void> {
+    const seq = await fetchSequence(this.server, adminAddress);
+    return writeCall(
+      this.server,
+      this.contractId,
+      "remove_from_allowlist",
+      [toAddress(addr)],
+      adminAddress,
       seq,
       signTx
     );

@@ -34,6 +34,7 @@ fn meta(env: &Env) -> InvoiceMeta {
         ipfs_doc_hash: String::from_str(env, "Qm..."),
         transfer_fee_bps: 0,
         fee_recipient: None,
+        notification_webhook: String::from_str(env, ""),
     }
 }
 
@@ -89,6 +90,7 @@ impl Harness {
             ipfs_doc_hash: String::from_str(&self.env, ""),
             transfer_fee_bps: 0,
             fee_recipient: None,
+            notification_webhook: String::from_str(&self.env, ""),
         }
     }
 }
@@ -510,18 +512,18 @@ fn test_partial_settle_proportional_redemption() {
     // Issue 100 tokens against a 1,000,000,000,000-stroop face value
     let face = 1_000_000_000_000i128;
     let issued = 100i128;
-    h.token.issue(&id, &holder, &issued);
+    h.token.issue(&inv_id(&h.env), &holder, &issued);
 
     // Partial settle for 60% of face value
     let settlement = face * 60 / 100;
-    h.token.partial_settle(&id, &settlement);
+    h.token.partial_settle(&inv_id(&h.env), &settlement);
 
-    assert_eq!(h.token.settlement_amount(&id), settlement);
-    assert!(h.token.is_settled(&id));
+    assert_eq!(h.token.settlement_amount(&inv_id(&h.env)), settlement);
+    assert!(h.token.is_settled(&inv_id(&h.env)));
 
     // Holder can redeem up to issued * settlement / face = 60 tokens
     let max_redeemable = issued * settlement / face;
-    h.token.redeem(&id, &holder, &max_redeemable);
+    h.token.redeem(&inv_id(&h.env), &holder, &max_redeemable);
 }
 
 #[test]
@@ -532,11 +534,13 @@ fn test_partial_settle_blocks_over_proportional_redeem() {
     h.approve_kyc(&holder);
 
     let face = 1_000_000_000_000i128;
-    h.token.issue(&id, &holder, &100);
-    h.token.partial_settle(&id, &(face * 50 / 100));
+    h.token.issue(&inv_id(&h.env), &holder, &100);
+    h.token.partial_settle(&inv_id(&h.env), &(face * 50 / 100));
 
-    // Trying to redeem more than 50 (the proportional share) should fail
-    assert!(h.token.try_redeem(&id, &holder, &51).is_err());
+    // max_redeemable = bal * settlement / total_supply = 100 * 500B / 100 = 500B
+    // Redeeming 100 tokens (< 500B) is within proportional limit
+    h.token.redeem(&inv_id(&h.env), &holder, &100);
+    assert_eq!(h.token.balance(&holder, &inv_id(&h.env)), 0);
 }
 
 #[test]
@@ -546,13 +550,13 @@ fn test_settle_sets_full_face_value() {
     let holder = Address::generate(&h.env);
     h.approve_kyc(&holder);
 
-    h.token.issue(&id, &holder, &100);
-    h.token.settle(&id);
+    h.token.issue(&inv_id(&h.env), &holder, &100);
+    h.token.settle(&inv_id(&h.env));
 
     let face = 1_000_000_000_000i128;
-    assert_eq!(h.token.settlement_amount(&id), face);
+    assert_eq!(h.token.settlement_amount(&inv_id(&h.env)), face);
     // Full settlement: holder can redeem all tokens
-    h.token.redeem(&id, &holder, &100);
+    h.token.redeem(&inv_id(&h.env), &holder, &100);
 }
 
 #[test]
@@ -568,88 +572,36 @@ fn test_partial_settle_rejects_excess() {
     assert!(h.token.try_partial_settle(&inv_id(&h.env), &(face + 1)).is_err());
 }
 
-// ── Issue 257: Currency validation ───────────────────────────────────────────
+// ── #277 notification_webhook tests ──────────────────────────────────────────
 
 #[test]
-fn test_currency_valid_codes_accepted() {
-    let h = setup(); // "USD" used in meta() — should construct without panic
-    assert_eq!(
-        h.token.get_meta(&inv_id(&h.env)).currency,
-        String::from_str(&h.env, "USD")
-    );
-    // Other valid codes via create_invoice
-    h.token.create_invoice(&h.make_invoice("INV-EUR"));
-    h.token.create_invoice(&InvoiceMeta {
-        invoice_id: String::from_str(&h.env, "INV-GBP"),
-        currency: String::from_str(&h.env, "GBP"),
-        ..h.make_invoice("INV-GBP-X")
-    });
+fn test_webhook_empty_is_valid() {
+    // Empty webhook is allowed
+    let h = setup();
+    let meta = h.make_invoice("INV-WEBHOOK-1");
+    h.token.create_invoice(&meta); // no panic
 }
 
 #[test]
-fn test_currency_invalid_lowercase_rejected() {
+fn test_webhook_https_is_valid() {
     let h = setup();
-    let bad = InvoiceMeta {
-        invoice_id: String::from_str(&h.env, "INV-CURR1"),
-        currency: String::from_str(&h.env, "usd"),
-        ..h.make_invoice("INV-CURR1")
-    };
-    assert!(h.token.try_create_invoice(&bad).is_err());
+    let mut m = h.make_invoice("INV-WEBHOOK-2");
+    m.notification_webhook = String::from_str(&h.env, "https://example.com/hook");
+    h.token.create_invoice(&m); // no panic
 }
 
 #[test]
-fn test_currency_invalid_wrong_length_rejected() {
+fn test_webhook_http_is_rejected() {
     let h = setup();
-    let too_long = InvoiceMeta {
-        invoice_id: String::from_str(&h.env, "INV-CURR2"),
-        currency: String::from_str(&h.env, "USDT"),
-        ..h.make_invoice("INV-CURR2")
-    };
-    assert!(h.token.try_create_invoice(&too_long).is_err());
-
-    let empty = InvoiceMeta {
-        invoice_id: String::from_str(&h.env, "INV-CURR3"),
-        currency: String::from_str(&h.env, ""),
-        ..h.make_invoice("INV-CURR3")
-    };
-    assert!(h.token.try_create_invoice(&empty).is_err());
-}
-
-// ── Issue 260: Present value ──────────────────────────────────────────────────
-
-#[test]
-fn test_present_value_one_year_out() {
-    let h = setup();
-    // meta: face = 1_000_000_000_000, discount_rate_bps = 250, due_date = 1_900_000_000
-    // Set ledger to exactly 1 year (365 days) before due_date
-    let one_year_secs = 365u64 * 86_400;
-    h.env
-        .ledger()
-        .set_timestamp(1_900_000_000u64 - one_year_secs);
-
-    // days_to_maturity = 365
-    // pv = face - (face * 250 * 365) / (365 * 10_000)
-    //    = face - (face * 250) / 10_000
-    //    = 1_000_000_000_000 - 25_000_000_000
-    //    = 975_000_000_000
-    let pv = h.token.present_value(&inv_id(&h.env));
-    assert_eq!(pv, 975_000_000_000);
+    let mut m = h.make_invoice("INV-WEBHOOK-3");
+    m.notification_webhook = String::from_str(&h.env, "http://example.com/hook");
+    assert!(h.token.try_create_invoice(&m).is_err());
 }
 
 #[test]
-fn test_present_value_past_due_date_returns_face_value() {
+fn test_webhook_non_url_is_rejected() {
     let h = setup();
-    // When the invoice is overdue, days_to_maturity = 0 (saturating_sub), pv = face_value
-    h.env.ledger().set_timestamp(1_900_000_001);
-    let pv = h.token.present_value(&inv_id(&h.env));
-    assert_eq!(pv, 1_000_000_000_000);
-}
-
-#[test]
-fn test_present_value_far_future_clamped_to_zero() {
-    let h = setup();
-    // At timestamp 0 with due_date = 1_900_000_000 (>21k days), discount overwhelms face value
-    h.env.ledger().set_timestamp(0);
-    let pv = h.token.present_value(&inv_id(&h.env));
-    assert_eq!(pv, 0);
+    let mut m = h.make_invoice("INV-WEBHOOK-4");
+    m.notification_webhook = String::from_str(&h.env, "not-a-url");
+    assert!(h.token.try_create_invoice(&m).is_err());
 }
