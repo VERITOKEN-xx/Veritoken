@@ -270,6 +270,27 @@ impl KycRegistry {
             .publish((symbol_short!("approved"), subject), verifier);
     }
 
+    pub fn approve_batch(env: Env, verifier: Address, subjects: Vec<(Address, u32, u64, String)>) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        verifier.require_auth();
+        Self::require_verifier(&env, &verifier);
+        if subjects.len() > 20 {
+            panic!("batch too large");
+        }
+        for (subject, tier, expiry, jurisdiction) in subjects.iter() {
+            let record = KycRecord {
+                status: KycStatus::Approved,
+                verifier: verifier.clone(),
+                tier: *tier,
+                expiry: *expiry,
+                jurisdiction: jurisdiction.clone(),
+            };
+            Self::write_record(&env, subject.clone(), record);
+            env.events()
+                .publish((symbol_short!("approved"), subject.clone()), verifier.clone());
+        }
+    }
+
     pub fn reject(env: Env, verifier: Address, subject: Address) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         verifier.require_auth();
@@ -292,6 +313,22 @@ impl KycRegistry {
         Self::append_log(&env, &verifier, &subject, "revoke");
         env.events()
             .publish((symbol_short!("revoked"), subject), verifier);
+    }
+
+    pub fn revoke_batch(env: Env, verifier: Address, subjects: Vec<Address>) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        verifier.require_auth();
+        Self::require_verifier(&env, &verifier);
+        if subjects.len() > 20 {
+            panic!("batch too large");
+        }
+        for subject in subjects.iter() {
+            let mut record = Self::get_record_or_default(&env, subject.clone(), &verifier);
+            record.status = KycStatus::Revoked;
+            Self::write_record(&env, subject.clone(), record);
+            env.events()
+                .publish((symbol_short!("revoked"), subject.clone()), verifier.clone());
+        }
     }
 
     /// Update only the `tier` field of an existing, Approved KYC record.
@@ -344,6 +381,30 @@ impl KycRegistry {
     pub fn get_tier(env: Env, addr: Address) -> u32 {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         Self::get_record(&env, addr).tier
+    }
+
+    /// Returns a paginated list of addresses approved by a given verifier.
+    /// `start` is a zero-based offset; `limit` is capped at 50.
+    /// Returns an empty vec when `start` is beyond the end of the list.
+    pub fn get_subjects_by_verifier(env: Env, verifier: Address, start: u32, limit: u32) -> Vec<Address> {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let cap: u32 = 50;
+        let effective_limit = if limit > cap { cap } else { limit };
+        let key = DataKey::VerifierSubjects(verifier);
+        let subjects = env.storage()
+            .persistent()
+            .get::<DataKey, Vec<Address>>(&key)
+            .unwrap_or_else(|| Vec::new(&env));
+        let total = subjects.len();
+        let mut result: Vec<Address> = Vec::new(&env);
+        if start >= total {
+            return result;
+        }
+        let end = (start + effective_limit).min(total);
+        for i in start..end {
+            result.push_back(subjects.get(i).unwrap());
+        }
+        result
     }
 
     // ── Internals ────────────────────────────────────────────────────────────
@@ -432,6 +493,19 @@ impl KycRegistry {
         let key = DataKey::KycStatus(addr);
         env.storage().persistent().set(&key, &record);
         env.storage().persistent().extend_ttl(&key, THRESHOLD, BUMP);
+        
+        // Update the verifier-to-subjects index
+        let verifier_key = DataKey::VerifierSubjects(record.verifier.clone());
+        let mut subjects = env.storage()
+            .persistent()
+            .get::<DataKey, Vec<Address>>(&verifier_key)
+            .unwrap_or_else(|| Vec::new(env));
+        
+        if !subjects.contains(&addr) {
+            subjects.push_back(addr);
+            env.storage().persistent().set(&verifier_key, &subjects);
+            env.storage().persistent().extend_ttl(&verifier_key, THRESHOLD, BUMP);
+        }
     }
 
     /// Bulk-revoke all subjects approved by a specific verifier. Admin-only.

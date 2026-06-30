@@ -4,7 +4,8 @@ target/
 # Cargo.lock is intentionally committed: the contracts are deployable
 # artifacts and CI builds with --locked for reproducibility.
 
-# Frontend
+# Frontend & Node
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.env
