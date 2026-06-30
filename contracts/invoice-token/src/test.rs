@@ -505,6 +505,7 @@ fn test_version_returns_nonempty() {
 #[test]
 fn test_partial_settle_proportional_redemption() {
     let h = setup();
+    let id = inv_id(&h.env);
     let holder = Address::generate(&h.env);
     h.approve_kyc(&holder);
 
@@ -528,6 +529,7 @@ fn test_partial_settle_proportional_redemption() {
 #[test]
 fn test_partial_settle_blocks_over_proportional_redeem() {
     let h = setup();
+    let id = inv_id(&h.env);
     let holder = Address::generate(&h.env);
     h.approve_kyc(&holder);
 
@@ -544,6 +546,7 @@ fn test_partial_settle_blocks_over_proportional_redeem() {
 #[test]
 fn test_settle_sets_full_face_value() {
     let h = setup();
+    let id = inv_id(&h.env);
     let holder = Address::generate(&h.env);
     h.approve_kyc(&holder);
 

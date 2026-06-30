@@ -359,7 +359,7 @@ impl InvoiceToken {
             .get(&DataKey::SettlementAmount(invoice_id.clone()))
             .unwrap_or(0);
         if settlement > 0 {
-            let total_supply: i128 = env
+            let meta: InvoiceMeta = env
                 .storage()
                 .persistent()
                 .get(&DataKey::TotalSupply(invoice_id.clone()))
@@ -670,6 +670,24 @@ impl InvoiceToken {
         String::from_str(&env, env!("CARGO_PKG_VERSION"))
     }
 
+    /// Returns the discounted present value of an invoice in stroops.
+    /// Formula: `face_value - (face_value * discount_rate_bps * days_to_maturity) / (365 * 10_000)`.
+    /// Clamped to 0 if the result is negative (heavily discounted or very long maturity).
+    pub fn present_value(env: Env, invoice_id: String) -> i128 {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let meta: InvoiceMeta = env
+            .storage()
+            .persistent()
+            .get(&DataKey::InvoiceMeta(invoice_id))
+            .expect("invoice not found");
+        let now = env.ledger().timestamp();
+        let days_to_maturity = (meta.due_date.saturating_sub(now) / 86400) as i128;
+        let pv = meta.face_value_usd
+            - (meta.face_value_usd * meta.discount_rate_bps as i128 * days_to_maturity)
+                / (365 * 10_000);
+        pv.max(0)
+    }
+
     // ── Internals ────────────────────────────────────────────────────────────
 
     fn validate_webhook(env: &Env, webhook: &String) {
@@ -737,6 +755,19 @@ impl InvoiceToken {
             .get(&DataKey::Admin)
             .expect("admin must be set");
         admin.require_auth();
+    }
+
+    fn validate_currency(currency: &String) {
+        if currency.len() != 3 {
+            panic!("currency must be ISO 4217 (3 uppercase letters)");
+        }
+        let mut bytes = [0u8; 3];
+        currency.copy_into_slice(&mut bytes);
+        for b in bytes {
+            if b < b'A' || b > b'Z' {
+                panic!("currency must be ISO 4217 (3 uppercase letters)");
+            }
+        }
     }
 
     fn require_kyc(env: &Env, addr: &Address) {

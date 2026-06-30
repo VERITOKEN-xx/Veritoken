@@ -26,6 +26,7 @@ pub enum DataKey {
     KycRegistry,
     Rules,
     Blocklist,
+    BlocklistCount,
     BlockedJurisdictions,
     MaxTransfer,
     MinHoldingPeriod,
@@ -129,6 +130,14 @@ impl ComplianceEngine {
         let mut list = Self::blocklist(&env);
         if !list.contains(&addr) {
             list.push_back(addr.clone());
+            let count: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::BlocklistCount)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::BlocklistCount, &(count + 1));
         }
         env.storage().instance().set(&DataKey::Blocklist, &list);
         env.events().publish((symbol_short!("blocked"),), addr);
@@ -139,12 +148,25 @@ impl ComplianceEngine {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let list = Self::blocklist(&env);
         let mut new_list: Vec<Address> = Vec::new(&env);
+        let mut removed = false;
         for a in list.iter() {
             if a != addr {
                 new_list.push_back(a);
+            } else {
+                removed = true;
             }
         }
         env.storage().instance().set(&DataKey::Blocklist, &new_list);
+        if removed {
+            let count: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::BlocklistCount)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::BlocklistCount, &count.saturating_sub(1));
+        }
     }
 
     pub fn is_blocklisted(env: Env, addr: Address) -> bool {

@@ -335,3 +335,57 @@ fn test_version_returns_nonempty() {
     let v = client.version();
     assert!(v.len() > 0);
 }
+
+#[test]
+fn test_blocklist_count_stays_accurate() {
+    let (env, client, _admin) = setup();
+    let addr1 = Address::generate(&env);
+    let addr2 = Address::generate(&env);
+
+    assert_eq!(client.blocklist_count(), 0);
+
+    client.add_to_blocklist(&addr1);
+    assert_eq!(client.blocklist_count(), 1);
+
+    client.add_to_blocklist(&addr2);
+    assert_eq!(client.blocklist_count(), 2);
+
+    // Duplicate add must not increment count
+    client.add_to_blocklist(&addr1);
+    assert_eq!(client.blocklist_count(), 2);
+
+    client.remove_from_blocklist(&addr1);
+    assert_eq!(client.blocklist_count(), 1);
+
+    // Remove of an address not on the list must not decrement count
+    client.remove_from_blocklist(&addr1);
+    assert_eq!(client.blocklist_count(), 1);
+}
+
+#[test]
+fn test_get_blocklist_pagination() {
+    let (env, client, _admin) = setup();
+    let addr1 = Address::generate(&env);
+    let addr2 = Address::generate(&env);
+    let addr3 = Address::generate(&env);
+
+    client.add_to_blocklist(&addr1);
+    client.add_to_blocklist(&addr2);
+    client.add_to_blocklist(&addr3);
+
+    // Fetch all
+    let all = client.get_blocklist(&0, &10);
+    assert_eq!(all.len(), 3);
+
+    // First page (2 items)
+    let page1 = client.get_blocklist(&0, &2);
+    assert_eq!(page1.len(), 2);
+
+    // Second page (1 item)
+    let page2 = client.get_blocklist(&2, &2);
+    assert_eq!(page2.len(), 1);
+
+    // Start beyond length returns empty
+    let empty = client.get_blocklist(&10, &5);
+    assert_eq!(empty.len(), 0);
+}
