@@ -6,7 +6,7 @@ mod test;
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, contracterror, panic_with_error, symbol_short,
-    Address, Env, Vec,
+    Address, Env, String, Vec,
 };
 
 #[contracterror]
@@ -14,6 +14,11 @@ use soroban_sdk::{
 #[repr(u32)]
 pub enum ComplianceError {
     AlreadyInitialized = 1,
+    MinHoldingPeriodExceeds365Days = 2,
+    NegativeMaxTransferAmount = 3,
+    MaxHoldersBelowCurrentCount = 4,
+    NoRulesPending = 5,
+    TooEarlyToActivate = 6,
 }
 
 #[contracttype]
@@ -22,12 +27,18 @@ pub enum DataKey {
     PendingAdmin,
     KycRegistry,
     Rules,
+    PendingRules,
+    PendingRulesActivateAt,
+    RuleChangeDelay,
     Blocklist,
+    BlocklistCount,
+    BlockedJurisdictions,
     MaxTransfer,
     MinHoldingPeriod,
     MaxHolders,
     HolderCount,
     HolderSince(Address),
+    Allowlist,
 }
 
 #[contracttype]
@@ -38,6 +49,7 @@ pub struct ComplianceRules {
     pub max_holders: u32,          // 0 = unlimited
     pub require_same_jurisdiction: bool,
     pub paused: bool,
+    pub allowlist_mode: bool,      // true = only allowlisted addresses may transfer
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -49,7 +61,10 @@ pub struct ComplianceEngine;
 
 #[contractimpl]
 impl ComplianceEngine {
-    pub fn initialize(env: Env, admin: Address, kyc_registry: Address) {
+    /// `rule_change_delay` is the minimum number of seconds that must pass
+    /// between a `propose_rules` call and a successful `activate_rules` call.
+    /// Use 0 to disable the time-lock (immediate activation).
+    pub fn initialize(env: Env, admin: Address, kyc_registry: Address, rule_change_delay: u64) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(env, ComplianceError::AlreadyInitialized);
         }
@@ -58,12 +73,16 @@ impl ComplianceEngine {
         env.storage()
             .instance()
             .set(&DataKey::KycRegistry, &kyc_registry);
+        env.storage()
+            .instance()
+            .set(&DataKey::RuleChangeDelay, &rule_change_delay);
         let default_rules = ComplianceRules {
             max_transfer_amount: 0,
             min_holding_period: 0,
             max_holders: 0,
             require_same_jurisdiction: false,
             paused: false,
+            allowlist_mode: false,
         };
         env.storage()
             .instance()
@@ -88,10 +107,56 @@ impl ComplianceEngine {
 
     // ── Rule management ──────────────────────────────────────────────────────
 
+    /// Propose new compliance rules with a time-lock delay.
+    /// The rules do not take effect until `activate_rules` is called after
+    /// the configured `rule_change_delay` has elapsed.
+    pub fn propose_rules(env: Env, new_rules: ComplianceRules) {
+        Self::require_admin(&env);
+        Self::validate_rules(&env, &new_rules);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let delay: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::RuleChangeDelay)
+            .unwrap_or(0);
+        let activate_at = env.ledger().timestamp() + delay;
+        env.storage().instance().set(&DataKey::PendingRules, &new_rules);
+        env.storage().instance().set(&DataKey::PendingRulesActivateAt, &activate_at);
+        env.events().publish((symbol_short!("rules_prp"),), activate_at);
+    }
+
+    /// Activate previously proposed rules after the time-lock delay has passed.
+    /// Can be called by anyone once the delay has elapsed.
+    pub fn activate_rules(env: Env) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let activate_at: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingRulesActivateAt)
+            .unwrap_or_else(|| panic_with_error!(env, ComplianceError::NoRulesPending));
+        let now = env.ledger().timestamp();
+        if now < activate_at {
+            panic_with_error!(env, ComplianceError::TooEarlyToActivate);
+        }
+        let pending: ComplianceRules = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingRules)
+            .unwrap_or_else(|| panic_with_error!(env, ComplianceError::NoRulesPending));
+        env.storage().instance().set(&DataKey::Rules, &pending);
+        env.storage().instance().remove(&DataKey::PendingRules);
+        env.storage().instance().remove(&DataKey::PendingRulesActivateAt);
+        env.events().publish((symbol_short!("rules_act"),), ());
+    }
+
+    /// Emergency immediate rule update. Admin-only. Emits a warning event.
     pub fn set_rules(env: Env, rules: ComplianceRules) {
         Self::require_admin(&env);
+        Self::validate_rules(&env, &rules);
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         env.storage().instance().set(&DataKey::Rules, &rules);
+        // Warning: bypasses the time-lock delay
+        env.events().publish((symbol_short!("rules_wrn"),), ());
         env.events().publish((symbol_short!("rules_set"),), ());
     }
 
@@ -106,6 +171,14 @@ impl ComplianceEngine {
         let mut list = Self::blocklist(&env);
         if !list.contains(&addr) {
             list.push_back(addr.clone());
+            let count: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::BlocklistCount)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::BlocklistCount, &(count + 1));
         }
         env.storage().instance().set(&DataKey::Blocklist, &list);
         env.events().publish((symbol_short!("blocked"),), addr);
@@ -116,17 +189,103 @@ impl ComplianceEngine {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let list = Self::blocklist(&env);
         let mut new_list: Vec<Address> = Vec::new(&env);
+        let mut removed = false;
         for a in list.iter() {
             if a != addr {
                 new_list.push_back(a);
+            } else {
+                removed = true;
             }
         }
         env.storage().instance().set(&DataKey::Blocklist, &new_list);
+        if removed {
+            let count: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::BlocklistCount)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::BlocklistCount, &count.saturating_sub(1));
+        }
     }
 
     pub fn is_blocklisted(env: Env, addr: Address) -> bool {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         Self::blocklist(&env).contains(&addr)
+    }
+
+    // ── Allowlist ────────────────────────────────────────────────────────────
+
+    pub fn add_to_allowlist(env: Env, addr: Address) {
+        Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let mut list = Self::allowlist(&env);
+        if !list.contains(&addr) {
+            list.push_back(addr.clone());
+        }
+        env.storage().instance().set(&DataKey::Allowlist, &list);
+        env.events().publish((symbol_short!("al_add"),), addr);
+    }
+
+    pub fn remove_from_allowlist(env: Env, addr: Address) {
+        Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let list = Self::allowlist(&env);
+        let mut new_list: Vec<Address> = Vec::new(&env);
+        for a in list.iter() {
+            if a != addr {
+                new_list.push_back(a);
+            }
+        }
+        env.storage().instance().set(&DataKey::Allowlist, &new_list);
+        env.events().publish((symbol_short!("al_rem"),), addr);
+    }
+
+    pub fn is_allowlisted(env: Env, addr: Address) -> bool {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        Self::allowlist(&env).contains(&addr)
+    }
+
+    // ── Jurisdiction blocklist ───────────────────────────────────────────────
+
+    pub fn add_blocked_jurisdiction(env: Env, jurisdiction: String) {
+        Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let mut list = Self::get_blocked_jurisdictions(env.clone());
+        if !list.contains(&jurisdiction) {
+            list.push_back(jurisdiction.clone());
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::BlockedJurisdictions, &list);
+        env.events()
+            .publish((symbol_short!("jur_add"),), jurisdiction);
+    }
+
+    pub fn remove_blocked_jurisdiction(env: Env, jurisdiction: String) {
+        Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let list = Self::get_blocked_jurisdictions(env.clone());
+        let mut new_list: Vec<String> = Vec::new(&env);
+        for j in list.iter() {
+            if j != jurisdiction {
+                new_list.push_back(j);
+            }
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::BlockedJurisdictions, &new_list);
+        env.events()
+            .publish((symbol_short!("jur_rem"),), jurisdiction);
+    }
+
+    pub fn get_blocked_jurisdictions(env: Env) -> Vec<String> {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        env.storage()
+            .instance()
+            .get(&DataKey::BlockedJurisdictions)
+            .unwrap_or_else(|| Vec::new(&env))
     }
 
     pub fn pause(env: Env) {
@@ -149,8 +308,6 @@ impl ComplianceEngine {
 
     // ── Transfer validation ──────────────────────────────────────────────────
 
-    /// Called by asset tokens before every transfer. Returns true if the
-    /// transfer is compliant with all configured rules.
     pub fn can_transfer(env: Env, from: Address, to: Address, amount: i128) -> bool {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let rules: ComplianceRules = env.storage().instance().get(&DataKey::Rules).unwrap();
@@ -162,6 +319,23 @@ impl ComplianceEngine {
         let blocklist = Self::blocklist(&env);
         if blocklist.contains(&from) || blocklist.contains(&to) {
             return false;
+        }
+
+        let blocked_jurisdictions = Self::get_blocked_jurisdictions(env.clone());
+        if !blocked_jurisdictions.is_empty() {
+            let kyc_registry: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::KycRegistry)
+                .unwrap();
+            let kyc = kyc_iface::KycRegistryClient::new(&env, &kyc_registry);
+            let from_record = kyc.get_record(&from);
+            let to_record = kyc.get_record(&to);
+            if blocked_jurisdictions.contains(&from_record.jurisdiction)
+                || blocked_jurisdictions.contains(&to_record.jurisdiction)
+            {
+                return false;
+            }
         }
 
         if rules.require_same_jurisdiction {
@@ -205,7 +379,6 @@ impl ComplianceEngine {
         true
     }
 
-    /// Called by rwa-token after a mint or transfer to register a new holder.
     pub fn register_holder(env: Env, addr: Address) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let key = DataKey::HolderSince(addr.clone());
@@ -226,7 +399,6 @@ impl ComplianceEngine {
         }
     }
 
-    /// Called by rwa-token after a transfer or burn that removes the last token from a holder.
     pub fn unregister_holder(env: Env, addr: Address) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let key = DataKey::HolderSince(addr.clone());
@@ -263,11 +435,41 @@ impl ComplianceEngine {
         admin.require_auth();
     }
 
+    fn validate_rules(env: &Env, rules: &ComplianceRules) {
+        if rules.min_holding_period > 31_536_000 {
+            panic_with_error!(env, ComplianceError::MinHoldingPeriodExceeds365Days);
+        }
+        if rules.max_transfer_amount < 0 {
+            panic_with_error!(env, ComplianceError::NegativeMaxTransferAmount);
+        }
+        if rules.max_holders > 0 {
+            let count: u32 = env
+                .storage()
+                .instance()
+                .get(&DataKey::HolderCount)
+                .unwrap_or(0);
+            if rules.max_holders < count {
+                panic_with_error!(env, ComplianceError::MaxHoldersBelowCurrentCount);
+            }
+        }
+    }
+
     fn blocklist(env: &Env) -> Vec<Address> {
         env.storage()
             .instance()
             .get(&DataKey::Blocklist)
             .unwrap_or_else(|| Vec::new(env))
+    }
+
+    fn allowlist(env: &Env) -> Vec<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Allowlist)
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    pub fn version(env: Env) -> soroban_sdk::String {
+        soroban_sdk::String::from_str(&env, env!("CARGO_PKG_VERSION"))
     }
 }
 

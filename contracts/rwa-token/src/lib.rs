@@ -2,8 +2,8 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use soroban_sdk::{
-    contract, contractimpl, contracterror, panic_with_error, symbol_short, Address, Env, String,
-    Symbol,
+    contract, contractimpl, contracttype, contracterror, panic_with_error, symbol_short, Address,
+    Env, String, Symbol, Vec,
 };
 
 mod admin;
@@ -17,6 +17,9 @@ mod storage_types;
 #[cfg(test)]
 mod test;
 
+#[cfg(test)]
+mod sep41_compliance;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -27,6 +30,28 @@ pub enum RwaError {
     InsufficientBalance = 4,
     AllowanceExpired = 5,
     InsufficientAllowance = 6,
+    AccountFrozen = 7,
+}
+
+pub const META_LEGAL_ENTITY: &str = "legal_ent";
+pub const META_GOVERNING_LAW: &str = "gov_law";
+pub const META_ISIN: &str = "isin";
+pub const META_PROSPECTUS_HASH: &str = "pros_hash";
+
+#[contracttype]
+#[derive(Clone)]
+pub struct ComplianceMetadata {
+    pub legal_entity: Option<String>,
+    pub governing_law: Option<String>,
+    pub isin: Option<String>,
+    pub prospectus_hash: Option<String>,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct RecipientEntry {
+    pub to: Address,
+    pub amount: i128,
 }
 
 #[contract]
@@ -46,13 +71,35 @@ impl RwaToken {
         asset_type: String, // "invoice" | "property" | "carbon_credit"
         kyc_registry: Address,
         compliance_engine: Address,
+        compliance_metadata: Option<ComplianceMetadata>,
     ) {
+        if asset_type != String::from_str(&env, "invoice")
+            && asset_type != String::from_str(&env, "property")
+            && asset_type != String::from_str(&env, "carbon_credit")
+        {
+            panic!("invalid asset_type: must be 'invoice', 'property', or 'carbon_credit'");
+        }
+
         admin::write_admin(&env, &admin);
         metadata::write_metadata(&env, decimal, name, symbol);
         metadata::write_asset_type(&env, asset_type);
         kyc::write_kyc_registry(&env, &kyc_registry);
         compliance::write_compliance_engine(&env, &compliance_engine);
         balance::write_total_supply(&env, 0);
+        if let Some(meta) = compliance_metadata {
+            if let Some(v) = meta.legal_entity {
+                compliance::write_metadata(&env, Symbol::new(&env, META_LEGAL_ENTITY), v);
+            }
+            if let Some(v) = meta.governing_law {
+                compliance::write_metadata(&env, Symbol::new(&env, META_GOVERNING_LAW), v);
+            }
+            if let Some(v) = meta.isin {
+                compliance::write_metadata(&env, Symbol::new(&env, META_ISIN), v);
+            }
+            if let Some(v) = meta.prospectus_hash {
+                compliance::write_metadata(&env, Symbol::new(&env, META_PROSPECTUS_HASH), v);
+            }
+        }
     }
 
     /// Legacy entry point — always panics to prevent post-deploy initialization.
@@ -97,6 +144,29 @@ impl RwaToken {
             .publish((symbol_short!("upd_ce"),), new_engine);
     }
 
+    // ── Freeze / Unfreeze ────────────────────────────────────────────────────
+
+    /// Freeze an individual address, blocking it from sending or receiving tokens.
+    pub fn freeze(env: Env, addr: Address) {
+        let admin = admin::read_admin(&env);
+        admin.require_auth();
+        compliance::set_frozen(&env, &addr, true);
+        env.events().publish((symbol_short!("frozen"),), addr);
+    }
+
+    /// Unfreeze a previously frozen address, restoring transfer access.
+    pub fn unfreeze(env: Env, addr: Address) {
+        let admin = admin::read_admin(&env);
+        admin.require_auth();
+        compliance::set_frozen(&env, &addr, false);
+        env.events().publish((symbol_short!("unfrozen"),), addr);
+    }
+
+    /// Returns true if the given address is currently frozen.
+    pub fn is_frozen(env: Env, addr: Address) -> bool {
+        compliance::is_frozen(&env, &addr)
+    }
+
     // ── SEP-41 Token Interface ───────────────────────────────────────────────
 
     pub fn allowance(env: Env, from: Address, spender: Address) -> i128 {
@@ -133,6 +203,9 @@ impl RwaToken {
         if amount <= 0 {
             panic!("amount must be positive");
         }
+        if compliance::is_frozen(&env, &from) || compliance::is_frozen(&env, &to) {
+            panic_with_error!(env, RwaError::AccountFrozen);
+        }
         kyc::require_kyc(&env, &from);
         kyc::require_kyc(&env, &to);
         compliance::check_transfer(&env, &from, &to, amount);
@@ -156,6 +229,9 @@ impl RwaToken {
         spender.require_auth();
         if amount <= 0 {
             panic!("amount must be positive");
+        }
+        if compliance::is_frozen(&env, &from) || compliance::is_frozen(&env, &to) {
+            panic_with_error!(env, RwaError::AccountFrozen);
         }
         kyc::require_kyc(&env, &from);
         kyc::require_kyc(&env, &to);
@@ -182,6 +258,9 @@ impl RwaToken {
         if amount <= 0 {
             panic!("amount must be positive");
         }
+        if compliance::is_frozen(&env, &from) {
+            panic_with_error!(env, RwaError::AccountFrozen);
+        }
         kyc::require_kyc(&env, &from);
         let from_balance_before = balance::read_balance(&env, from.clone());
         balance::spend_balance(&env, from.clone(), amount);
@@ -197,6 +276,9 @@ impl RwaToken {
         spender.require_auth();
         if amount <= 0 {
             panic!("amount must be positive");
+        }
+        if compliance::is_frozen(&env, &from) {
+            panic_with_error!(env, RwaError::AccountFrozen);
         }
         kyc::require_kyc(&env, &from);
         let from_balance_before = balance::read_balance(&env, from.clone());
@@ -236,6 +318,13 @@ impl RwaToken {
         }
         kyc::require_kyc(&env, &to);
         let previous_balance = balance::read_balance(&env, to.clone());
+        // A mint that introduces a brand-new holder must satisfy the compliance
+        // engine (e.g. the max_holders cap, pause, blocklist), mirroring the
+        // transfer path. Without this, register_holder could push the holder
+        // count past max_holders.
+        if amount > 0 && previous_balance == 0 {
+            compliance::check_transfer(&env, &to, &to, amount);
+        }
         balance::receive_balance(&env, to.clone(), amount);
         if amount > 0 && previous_balance == 0 {
             compliance::register_holder(&env, &to);
@@ -267,5 +356,70 @@ impl RwaToken {
 
     pub fn get_compliance_metadata(env: Env, key: Symbol) -> String {
         compliance::read_metadata(&env, key)
+    }
+
+    pub fn get_all_compliance_metadata(env: Env) -> ComplianceMetadata {
+        let read = |key: &str| {
+            let v = compliance::read_metadata(&env, Symbol::new(&env, key));
+            if v.len() > 0 { Some(v) } else { None }
+        };
+        ComplianceMetadata {
+            legal_entity: read(META_LEGAL_ENTITY),
+            governing_law: read(META_GOVERNING_LAW),
+            isin: read(META_ISIN),
+            prospectus_hash: read(META_PROSPECTUS_HASH),
+        }
+    }
+
+    /// Batch transfer tokens from `from` to up to 10 recipients in a single transaction.
+    /// All KYC and compliance checks run per-recipient before any balance changes occur.
+    /// Panics if the recipient count exceeds 10 or any compliance/KYC check fails.
+    pub fn batch_transfer(env: Env, from: Address, recipients: Vec<RecipientEntry>) {
+        if recipients.len() > 10 {
+            panic!("batch_transfer: exceeds maximum of 10 recipients");
+        }
+        from.require_auth();
+        if compliance::is_frozen(&env, &from) {
+            panic_with_error!(env, RwaError::AccountFrozen);
+        }
+        kyc::require_kyc(&env, &from);
+
+        let len = recipients.len();
+        // Validate all recipients before executing any balance changes.
+        for i in 0..len {
+            let entry = recipients.get(i).expect("recipient index out of bounds");
+            if entry.amount <= 0 {
+                panic!("amount must be positive");
+            }
+            if compliance::is_frozen(&env, &entry.to) {
+                panic_with_error!(env, RwaError::AccountFrozen);
+            }
+            kyc::require_kyc(&env, &entry.to);
+            compliance::check_transfer(&env, &from, &entry.to, entry.amount);
+        }
+
+        // Execute all balance changes.
+        for i in 0..len {
+            let entry = recipients.get(i).expect("recipient index out of bounds");
+            let to_balance_before = balance::read_balance(&env, entry.to.clone());
+            balance::spend_balance(&env, from.clone(), entry.amount);
+            balance::receive_balance(&env, entry.to.clone(), entry.amount);
+            if from != entry.to && to_balance_before == 0 {
+                compliance::register_holder(&env, &entry.to);
+            }
+            env.events().publish(
+                (symbol_short!("transfer"), from.clone(), entry.to.clone()),
+                entry.amount,
+            );
+        }
+
+        // Unregister from if balance dropped to zero.
+        if balance::read_balance(&env, from.clone()) == 0 {
+            compliance::unregister_holder(&env, &from);
+        }
+    }
+
+    pub fn version(env: Env) -> String {
+        String::from_str(&env, env!("CARGO_PKG_VERSION"))
     }
 }

@@ -25,6 +25,8 @@ fn meta(env: &Env) -> ProjectMeta {
         country: String::from_str(env, "BR"),
         verifier: String::from_str(env, "Verra"),
         ipfs_cert_hash: String::from_str(env, "Qm..."),
+        registry_url: String::from_str(env, "https://registry.verra.org"),
+        registry_project_id: String::from_str(env, "VCS-1234"),
     }
 }
 
@@ -37,11 +39,11 @@ fn setup() -> Harness {
     let kyc = KycRegistryClient::new(&env, &kyc_id);
     kyc.initialize(&admin);
     let verifier = Address::generate(&env);
-    kyc.add_verifier(&verifier);
+    kyc.add_verifier(&admin, &verifier);
 
     let compliance_id = env.register(ComplianceEngine, ());
     let compliance = ComplianceEngineClient::new(&env, &compliance_id);
-    compliance.initialize(&admin, &kyc_id);
+    compliance.initialize(&admin, &kyc_id, &0u64);
 
     // Carbon credit token — constructor args passed atomically at register time
     let token_id = env.register(
@@ -172,6 +174,38 @@ fn test_retire_records_receipt() {
     assert_eq!(r.amount, 40);
     assert_eq!(r.retiree, alice);
 
+}
+
+#[test]
+fn test_retire_blocked_when_paused() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.token.mint(&alice, &100);
+
+    // Pausing the compliance engine must freeze all token operations, including
+    // retirements (burns).
+    h.compliance.pause();
+    assert!(h
+        .token
+        .try_retire(
+            &alice,
+            &10,
+            &String::from_str(&h.env, "Acme Corp 2024 offset"),
+            &String::from_str(&h.env, "annual net-zero pledge"),
+        )
+        .is_err());
+
+    // After unpausing, the retirement goes through.
+    h.compliance.unpause();
+    let receipt = h.token.retire(
+        &alice,
+        &10,
+        &String::from_str(&h.env, "Acme Corp 2024 offset"),
+        &String::from_str(&h.env, "annual net-zero pledge"),
+    );
+    assert_eq!(receipt.amount, 10);
+    assert_eq!(h.token.balance(&alice), 90);
 }
 
 #[test]
@@ -319,6 +353,58 @@ fn test_to_certificate_json() {
     assert!(s.contains("\"timestamp\":"));
 }
 
+// ── project_type validation tests (#255) ─────────────────────────────────────
+
+#[test]
+#[should_panic]
+fn test_invalid_project_type_panics_in_constructor() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let kyc_id = Address::generate(&env);
+    let ce_id = Address::generate(&env);
+    let mut bad_meta = meta(&env);
+    bad_meta.project_type = String::from_str(&env, "nuclear");
+    env.register(CarbonCreditToken, (admin, kyc_id, ce_id, bad_meta));
+}
+
+#[test]
+fn test_valid_project_types_accepted_in_constructor() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    for pt in ["forestry", "renewable", "methane_capture"] {
+        let kyc_id = env.register(KycRegistry, ());
+        let kyc = KycRegistryClient::new(&env, &kyc_id);
+        kyc.initialize(&admin);
+        let compliance_id = env.register(ComplianceEngine, ());
+        let compliance = ComplianceEngineClient::new(&env, &compliance_id);
+        compliance.initialize(&admin, &kyc_id, &0u64);
+        let mut m = meta(&env);
+        m.project_type = String::from_str(&env, pt);
+        let token_id = env.register(CarbonCreditToken, (admin.clone(), kyc_id, compliance_id, m));
+        let token = CarbonCreditTokenClient::new(&env, &token_id);
+        assert_eq!(token.get_meta().project_type, String::from_str(&env, pt));
+    }
+}
+
+#[test]
+fn test_invalid_project_type_panics_in_update_meta() {
+    let h = setup();
+    let mut bad_meta = h.token.get_meta();
+    bad_meta.project_type = String::from_str(&h.env, "coal");
+    assert!(h.token.try_update_meta(&bad_meta).is_err());
+}
+
+#[test]
+fn test_valid_project_type_accepted_in_update_meta() {
+    let h = setup();
+    let mut new_meta = h.token.get_meta();
+    new_meta.project_type = String::from_str(&h.env, "renewable");
+    h.token.update_meta(&new_meta);
+    assert_eq!(h.token.get_meta().project_type, String::from_str(&h.env, "renewable"));
+}
+
 #[test]
 fn test_update_compliance_engine_affects_transfers() {
     let h = setup();
@@ -338,4 +424,139 @@ fn test_update_compliance_engine_affects_transfers() {
 
     h.token.update_compliance_engine(&ce2_id);
     assert!(h.token.try_transfer(&alice, &bob, &10).is_err());
+}
+
+#[test]
+fn test_version_returns_nonempty() {
+    let h = setup();
+    let v = h.token.version();
+    assert!(v.len() > 0);
+}
+
+#[test]
+fn test_vintage_year_boundaries_accepted() {
+    let h = setup();
+    let mut m = meta(&h.env);
+
+    m.vintage_year = 1990;
+    h.token.update_meta(&m);
+
+    m.vintage_year = 2050;
+    h.token.update_meta(&m);
+}
+
+#[test]
+fn test_vintage_year_below_min_rejected() {
+    let h = setup();
+    let mut m = meta(&h.env);
+    m.vintage_year = 1989;
+    assert!(h.token.try_update_meta(&m).is_err());
+}
+
+#[test]
+fn test_vintage_year_above_max_rejected() {
+    let h = setup();
+    let mut m = meta(&h.env);
+    m.vintage_year = 2051;
+    assert!(h.token.try_update_meta(&m).is_err());
+}
+
+#[test]
+fn test_vintage_year_zero_rejected() {
+    let h = setup();
+    let mut m = meta(&h.env);
+    m.vintage_year = 0;
+    assert!(h.token.try_update_meta(&m).is_err());
+}
+
+// ── get_receipts pagination tests (#202) ─────────────────────────────────────
+
+/// Helper: retire `amount` tokens from alice in the given harness.
+fn do_retire(h: &Harness, alice: &Address, amount: i128) {
+    h.token.retire(
+        alice,
+        &amount,
+        &String::from_str(&h.env, "beneficiary"),
+        &String::from_str(&h.env, "reason"),
+    );
+}
+
+#[test]
+fn test_get_receipts_pagination() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    // Mint enough to retire 5 times
+    h.token.mint(&alice, &500);
+
+    for amount in [10i128, 20, 30, 40, 50] {
+        do_retire(&h, &alice, amount);
+    }
+
+    assert_eq!(h.token.retirement_count(), 5);
+
+    // First page: start=0, limit=3 → indices 0,1,2
+    let page1 = h.token.get_receipts(&0, &3);
+    assert_eq!(page1.len(), 3);
+
+    // Second page: start=3, limit=3 → indices 3,4 (only 2 remain)
+    let page2 = h.token.get_receipts(&3, &3);
+    assert_eq!(page2.len(), 2);
+}
+
+#[test]
+fn test_get_receipts_limit_cap() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.token.mint(&alice, &200);
+
+    // Retire only twice
+    do_retire(&h, &alice, 50);
+    do_retire(&h, &alice, 75);
+
+    assert_eq!(h.token.retirement_count(), 2);
+
+    // Requesting 200 items (> MAX_PAGE_SIZE=100) should still only return 2
+    let results = h.token.get_receipts(&0, &200);
+    assert_eq!(results.len(), 2);
+}
+
+#[test]
+fn test_get_receipts_beyond_end_returns_empty() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.token.mint(&alice, &100);
+
+    do_retire(&h, &alice, 10);
+
+    assert_eq!(h.token.retirement_count(), 1);
+
+    // start=5 is past the single receipt at index 0 → empty
+    let results = h.token.get_receipts(&5, &10);
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_get_receipts_insertion_order() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.token.mint(&alice, &300);
+
+    let amounts = [10i128, 20, 30];
+    for &amount in &amounts {
+        do_retire(&h, &alice, amount);
+    }
+
+    assert_eq!(h.token.retirement_count(), 3);
+
+    let receipts = h.token.get_receipts(&0, &10);
+    assert_eq!(receipts.len(), 3);
+
+    // Receipts must appear in insertion (retirement) order
+    assert_eq!(receipts.get(0).unwrap().amount, 10);
+    assert_eq!(receipts.get(1).unwrap().amount, 20);
+    assert_eq!(receipts.get(2).unwrap().amount, 30);
 }

@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use crate::{RwaToken, RwaTokenClient};
+use crate::{ComplianceMetadata, RwaToken, RwaTokenClient, RwaError, META_ISIN, META_LEGAL_ENTITY};
 use compliance_engine::{ComplianceEngine, ComplianceEngineClient, ComplianceRules};
 use kyc_registry::{KycRegistry, KycRegistryClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, Address, Env, IntoVal, String};
 
 #[allow(dead_code)]
 struct Harness {
@@ -25,12 +25,12 @@ fn setup() -> Harness {
     let kyc = KycRegistryClient::new(&env, &kyc_id);
     kyc.initialize(&admin);
     let verifier = Address::generate(&env);
-    kyc.add_verifier(&verifier);
+    kyc.add_verifier(&admin, &verifier);
 
     // Compliance engine
     let compliance_id = env.register(ComplianceEngine, ());
     let compliance = ComplianceEngineClient::new(&env, &compliance_id);
-    compliance.initialize(&admin, &kyc_id);
+    compliance.initialize(&admin, &kyc_id, &0u64);
 
     // RWA token — constructor args passed atomically at register time
     let token_id = env.register(
@@ -43,6 +43,7 @@ fn setup() -> Harness {
             String::from_str(&env, "property"),
             kyc_id.clone(),
             compliance_id.clone(),
+            Option::<ComplianceMetadata>::None,
         ),
     );
     let token = RwaTokenClient::new(&env, &token_id);
@@ -198,6 +199,37 @@ fn test_max_holder_cap_blocks_new_holder_and_maintains_count() {
 }
 
 #[test]
+fn test_max_holders_blocks_new_holders_via_token() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    let charlie = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+    h.approve_kyc(&charlie);
+
+    h.compliance.set_rules(&ComplianceRules {
+        max_transfer_amount: 0,
+        min_holding_period: 0,
+        max_holders: 2,
+        require_same_jurisdiction: false,
+        paused: false,
+    });
+
+    // First two distinct holders fill the cap.
+    h.token.mint(&alice, &1_000);
+    h.token.mint(&bob, &1_000);
+    assert_eq!(h.compliance.holder_count(), 2);
+
+    // A mint to a third distinct holder must be rejected by the compliance engine.
+    assert!(h.token.try_mint(&charlie, &1_000).is_err());
+
+    // The failed mint leaves the holder count unchanged.
+    assert_eq!(h.compliance.holder_count(), 2);
+    assert_eq!(h.token.balance(&charlie), 0);
+}
+
+#[test]
 fn test_approve_and_transfer_from() {
     let h = setup();
     let alice = Address::generate(&h.env);
@@ -274,6 +306,80 @@ fn test_non_deployer_cannot_reinitialize() {
 }
 
 #[test]
+fn test_get_all_compliance_metadata_returns_empty_when_unset() {
+    let h = setup();
+    let meta = h.token.get_all_compliance_metadata();
+    assert!(meta.legal_entity.is_none());
+    assert!(meta.governing_law.is_none());
+    assert!(meta.isin.is_none());
+    assert!(meta.prospectus_hash.is_none());
+}
+
+#[test]
+fn test_get_all_compliance_metadata_returns_set_fields() {
+    let h = setup();
+    let key_entity = soroban_sdk::Symbol::new(&h.env, META_LEGAL_ENTITY);
+    let key_isin = soroban_sdk::Symbol::new(&h.env, META_ISIN);
+    h.token
+        .set_compliance_metadata(&key_entity, &String::from_str(&h.env, "Acme Corp"));
+    h.token
+        .set_compliance_metadata(&key_isin, &String::from_str(&h.env, "US1234567890"));
+    let meta = h.token.get_all_compliance_metadata();
+    assert_eq!(
+        meta.legal_entity,
+        Some(String::from_str(&h.env, "Acme Corp"))
+    );
+    assert_eq!(meta.isin, Some(String::from_str(&h.env, "US1234567890")));
+    assert!(meta.governing_law.is_none());
+    assert!(meta.prospectus_hash.is_none());
+}
+
+#[test]
+fn test_constructor_sets_compliance_metadata() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+
+    let kyc_id = env.register(KycRegistry, ());
+    let kyc = KycRegistryClient::new(&env, &kyc_id);
+    kyc.initialize(&admin);
+
+    let compliance_id = env.register(ComplianceEngine, ());
+    let compliance = ComplianceEngineClient::new(&env, &compliance_id);
+    compliance.initialize(&admin, &kyc_id, &0u64);
+
+    let token_id = env.register(
+        RwaToken,
+        (
+            admin.clone(),
+            7u32,
+            String::from_str(&env, "Invoice Token"),
+            String::from_str(&env, "IVTK"),
+            String::from_str(&env, "invoice"),
+            kyc_id.clone(),
+            compliance_id.clone(),
+            Some(ComplianceMetadata {
+                legal_entity: Some(String::from_str(&env, "Issuer LLC")),
+                governing_law: Some(String::from_str(&env, "New York")),
+                isin: None,
+                prospectus_hash: None,
+            }),
+        ),
+    );
+    let token = RwaTokenClient::new(&env, &token_id);
+    let meta = token.get_all_compliance_metadata();
+    assert_eq!(
+        meta.legal_entity,
+        Some(String::from_str(&env, "Issuer LLC"))
+    );
+    assert_eq!(
+        meta.governing_law,
+        Some(String::from_str(&env, "New York"))
+    );
+    assert!(meta.isin.is_none());
+}
+
+#[test]
 fn test_mint_twice_same_address_holder_count_is_one() {
     let h = setup();
     let user = Address::generate(&h.env);
@@ -285,4 +391,35 @@ fn test_mint_twice_same_address_holder_count_is_one() {
     assert_eq!(h.compliance.holder_count(), 1);
     assert_eq!(h.token.balance(&user), 1_500);
     assert_eq!(h.token.total_supply(), 1_500);
+}
+
+#[test]
+#[should_panic(expected = "invalid asset_type: must be 'invoice', 'property', or 'carbon_credit'")]
+fn test_invalid_asset_type() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let kyc_id = env.register(KycRegistry, ());
+    let compliance_id = env.register(ComplianceEngine, ());
+
+    // Try to register token with invalid asset type
+    let _ = env.register(
+        RwaToken,
+        (
+            admin,
+            7u32,
+            String::from_str(&env, "Bad Token"),
+            String::from_str(&env, "BAD"),
+            String::from_str(&env, "banana"),
+            kyc_id,
+            compliance_id,
+            Option::<ComplianceMetadata>::None,
+        ),
+    );
+}
+
+#[test]
+fn test_version_returns_nonempty() {
+    let h = setup();
+    let v = h.token.version();
+    assert!(v.len() > 0);
 }

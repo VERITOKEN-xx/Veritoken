@@ -17,16 +17,45 @@ pub enum KycError {
     NotVerifier = 2,
     NotApproved = 3,
     NoRecord = 4,
+    InvalidJurisdiction = 5,
+    NotAdmin = 6,
+    EmptyAdminList = 7,
 }
 
 #[contracttype]
 pub enum DataKey {
-    Admin,
+    AdminList,
     PendingAdmin,
     KycStatus(Address),
     VerifierList,
     VerifierCount,
-    VerifierSubjects(Address),
+    ExpiryIndex(u32),
+    ExpiryIndexCount,
+    VerifierLog(u32),
+    VerifierLogCount,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct VerifierLogEntry {
+    pub verifier: Address,
+    pub subject: Address,
+    pub action: String,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct ExpiryEntry {
+    pub expiry: u64,
+    pub addr: Address,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct ExpiringRecord {
+    pub addr: Address,
+    pub record: KycRecord,
 }
 
 #[contracttype]
@@ -58,40 +87,87 @@ pub struct KycRegistry;
 #[contractimpl]
 impl KycRegistry {
     pub fn initialize(env: Env, admin: Address) {
-        if env.storage().instance().has(&DataKey::Admin) {
+        if env.storage().instance().has(&DataKey::AdminList) {
             panic_with_error!(env, KycError::AlreadyInitialized);
         }
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        env.storage().instance().set(&DataKey::Admin, &admin);
+        let mut list: Vec<Address> = Vec::new(&env);
+        list.push_back(admin);
+        env.storage().instance().set(&DataKey::AdminList, &list);
     }
 
-    pub fn propose_admin(env: Env, new_admin: Address) {
+    // ── Admin management ─────────────────────────────────────────────────────
+
+    /// Propose a new admin (two-step handover). Requires existing admin auth.
+    pub fn propose_admin(env: Env, caller: Address, new_admin: Address) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        Self::require_admin(&env);
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
         env.storage().instance().set(&DataKey::PendingAdmin, &new_admin);
         env.events().publish((symbol_short!("proposed"),), new_admin);
     }
 
+    /// The pending admin accepts and is added to the AdminList.
     pub fn accept_admin(env: Env) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         let pending: Address = env.storage().instance().get(&DataKey::PendingAdmin).expect("no pending admin");
         pending.require_auth();
-        let old_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        env.storage().instance().set(&DataKey::Admin, &pending);
+        let mut list = Self::admin_list(&env);
+        if !list.contains(&pending) {
+            list.push_back(pending.clone());
+            env.storage().instance().set(&DataKey::AdminList, &list);
+        }
         env.storage().instance().remove(&DataKey::PendingAdmin);
-        env.events().publish((symbol_short!("admin_set"),), (old_admin, pending));
+        env.events().publish((symbol_short!("admin_add"),), pending);
+    }
+
+    /// Immediately add a new admin. Requires existing admin auth.
+    pub fn add_admin(env: Env, caller: Address, new_admin: Address) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
+        let mut list = Self::admin_list(&env);
+        if !list.contains(&new_admin) {
+            list.push_back(new_admin.clone());
+            env.storage().instance().set(&DataKey::AdminList, &list);
+        }
+        env.events().publish((symbol_short!("admin_add"),), new_admin);
+    }
+
+    /// Remove an admin from the list. Panics if it would leave the list empty.
+    pub fn remove_admin(env: Env, caller: Address, admin_to_remove: Address) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
+        let list = Self::admin_list(&env);
+        if list.len() <= 1 {
+            panic_with_error!(env, KycError::EmptyAdminList);
+        }
+        let mut new_list: Vec<Address> = Vec::new(&env);
+        for a in list.iter() {
+            if a != admin_to_remove {
+                new_list.push_back(a);
+            }
+        }
+        env.storage().instance().set(&DataKey::AdminList, &new_list);
+        env.events().publish((symbol_short!("admin_rem"),), admin_to_remove);
+    }
+
+    /// Returns the list of current admins.
+    pub fn get_admins(env: Env) -> Vec<Address> {
+        Self::admin_list(&env)
     }
 
     // ── Verifier management ──────────────────────────────────────────────────
 
-    pub fn add_verifier(env: Env, verifier: Address) {
+    pub fn add_verifier(env: Env, caller: Address, verifier: Address) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        Self::require_admin(&env);
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
         let mut list = Self::verifier_list(&env);
         if !list.contains(&verifier) {
             list.push_back(verifier.clone());
             env.storage().instance().set(&DataKey::VerifierList, &list);
-            // Increment the count only when a new entry is actually added.
             let count: u32 = env
                 .storage()
                 .instance()
@@ -106,9 +182,10 @@ impl KycRegistry {
         env.events().publish((symbol_short!("add_vrf"),), verifier);
     }
 
-    pub fn remove_verifier(env: Env, verifier: Address) {
+    pub fn remove_verifier(env: Env, caller: Address, verifier: Address) {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        Self::require_admin(&env);
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
         let list = Self::verifier_list(&env);
         let mut new_list: Vec<Address> = Vec::new(&env);
         let mut removed = false;
@@ -179,6 +256,7 @@ impl KycRegistry {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         verifier.require_auth();
         Self::require_verifier(&env, &verifier);
+        Self::validate_jurisdiction(&env, &jurisdiction);
         let record = KycRecord {
             status: KycStatus::Approved,
             verifier: verifier.clone(),
@@ -187,6 +265,7 @@ impl KycRegistry {
             jurisdiction,
         };
         Self::write_record(&env, subject.clone(), record);
+        Self::append_log(&env, &verifier, &subject, "approve");
         env.events()
             .publish((symbol_short!("approved"), subject), verifier);
     }
@@ -219,6 +298,7 @@ impl KycRegistry {
         let mut record = Self::get_record_or_default(&env, subject.clone(), &verifier);
         record.status = KycStatus::Rejected;
         Self::write_record(&env, subject.clone(), record);
+        Self::append_log(&env, &verifier, &subject, "reject");
         env.events()
             .publish((symbol_short!("rejected"), subject), verifier);
     }
@@ -230,6 +310,7 @@ impl KycRegistry {
         let mut record = Self::get_record_or_default(&env, subject.clone(), &verifier);
         record.status = KycStatus::Revoked;
         Self::write_record(&env, subject.clone(), record);
+        Self::append_log(&env, &verifier, &subject, "revoke");
         env.events()
             .publish((symbol_short!("revoked"), subject), verifier);
     }
@@ -328,13 +409,29 @@ impl KycRegistry {
 
     // ── Internals ────────────────────────────────────────────────────────────
 
-    fn require_admin(env: &Env) {
-        let admin: Address = env
-            .storage()
+    fn validate_jurisdiction(env: &Env, jurisdiction: &String) {
+        if jurisdiction.len() != 2 {
+            panic_with_error!(env, KycError::InvalidJurisdiction);
+        }
+        let mut bytes = [0u8; 2];
+        jurisdiction.copy_into_slice(&mut bytes);
+        if bytes[0] < b'A' || bytes[0] > b'Z' || bytes[1] < b'A' || bytes[1] > b'Z' {
+            panic_with_error!(env, KycError::InvalidJurisdiction);
+        }
+    }
+
+    fn admin_list(env: &Env) -> Vec<Address> {
+        env.storage()
             .instance()
-            .get(&DataKey::Admin)
-            .expect("admin must be set");
-        admin.require_auth();
+            .get(&DataKey::AdminList)
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    fn require_admin(env: &Env, caller: &Address) {
+        let list = Self::admin_list(env);
+        if !list.contains(caller) {
+            panic_with_error!(env, KycError::NotAdmin);
+        }
     }
 
     fn require_verifier(env: &Env, verifier: &Address) {
@@ -364,8 +461,36 @@ impl KycRegistry {
             })
     }
 
+    fn append_log(env: &Env, verifier: &Address, subject: &Address, action: &str) {
+        let count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerifierLogCount)
+            .unwrap_or(0);
+        let entry = VerifierLogEntry {
+            verifier: verifier.clone(),
+            subject: subject.clone(),
+            action: String::from_str(env, action),
+            timestamp: env.ledger().timestamp(),
+        };
+        let key = DataKey::VerifierLog(count);
+        env.storage().persistent().set(&key, &entry);
+        env.storage().persistent().extend_ttl(&key, THRESHOLD, BUMP);
+        env.storage()
+            .instance()
+            .set(&DataKey::VerifierLogCount, &(count + 1));
+    }
+
     fn write_record(env: &Env, addr: Address, record: KycRecord) {
-        let key = DataKey::KycStatus(addr.clone());
+        if record.status == KycStatus::Approved && record.expiry != 0 {
+            let idx: u32 = env.storage().instance().get(&DataKey::ExpiryIndexCount).unwrap_or(0);
+            let entry = ExpiryEntry { expiry: record.expiry, addr: addr.clone() };
+            let ik = DataKey::ExpiryIndex(idx);
+            env.storage().persistent().set(&ik, &entry);
+            env.storage().persistent().extend_ttl(&ik, THRESHOLD, BUMP);
+            env.storage().instance().set(&DataKey::ExpiryIndexCount, &(idx + 1));
+        }
+        let key = DataKey::KycStatus(addr);
         env.storage().persistent().set(&key, &record);
         env.storage().persistent().extend_ttl(&key, THRESHOLD, BUMP);
         
@@ -381,5 +506,92 @@ impl KycRegistry {
             env.storage().persistent().set(&verifier_key, &subjects);
             env.storage().persistent().extend_ttl(&verifier_key, THRESHOLD, BUMP);
         }
+    }
+
+    /// Bulk-revoke all subjects approved by a specific verifier. Admin-only.
+    /// Capped at 50 subjects per call; call again if more subjects remain.
+    /// Emits a `revoked` event per subject and a `bulk_rvkd` event with the count.
+    pub fn revoke_all_by_verifier(env: Env, verifier: Address) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        Self::require_admin(&env);
+        let key = DataKey::VerifierSubjects(verifier.clone());
+        let subjects: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(&env));
+        let cap: u32 = 50;
+        let count = subjects.len().min(cap);
+        let mut revoked: u32 = 0;
+        for i in 0..count {
+            let subject = subjects.get(i).unwrap();
+            let sk = DataKey::KycStatus(subject.clone());
+            if let Some(mut record) = env.storage().persistent().get::<DataKey, KycRecord>(&sk) {
+                if record.status == KycStatus::Approved {
+                    record.status = KycStatus::Revoked;
+                    env.storage().persistent().set(&sk, &record);
+                    env.storage().persistent().extend_ttl(&sk, THRESHOLD, BUMP);
+                    env.events().publish((symbol_short!("revoked"), subject), verifier.clone());
+                    revoked += 1;
+                }
+            }
+        }
+        env.events().publish((symbol_short!("bulk_rvkd"),), (verifier, revoked));
+    }
+
+    pub fn get_expiring_soon(env: Env, within_seconds: u64, start: u32, limit: u32) -> Vec<ExpiringRecord> {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let count: u32 = env.storage().instance().get(&DataKey::ExpiryIndexCount).unwrap_or(0);
+        let now = env.ledger().timestamp();
+        let capped = limit.min(50);
+        let mut out: Vec<ExpiringRecord> = Vec::new(&env);
+        let mut i = start;
+        while i < count && out.len() < capped {
+            if let Some(entry) = env.storage().persistent().get::<DataKey, ExpiryEntry>(&DataKey::ExpiryIndex(i)) {
+                if entry.expiry > now && entry.expiry <= now + within_seconds {
+                    if let Some(record) = env.storage().persistent().get::<DataKey, KycRecord>(&DataKey::KycStatus(entry.addr.clone())) {
+                        if record.status == KycStatus::Approved {
+                            out.push_back(ExpiringRecord { addr: entry.addr, record });
+                        }
+                    }
+                }
+            }
+            i += 1;
+        }
+        out
+    }
+
+    // ── Verifier log ─────────────────────────────────────────────────────────
+
+    pub fn verifier_log_count(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::VerifierLogCount)
+            .unwrap_or(0)
+    }
+
+    pub fn get_verifier_log(env: Env, start: u32, limit: u32) -> Vec<VerifierLogEntry> {
+        let count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerifierLogCount)
+            .unwrap_or(0);
+        let capped = limit.min(50);
+        let end = (start + capped).min(count);
+        let mut out = Vec::new(&env);
+        for i in start..end {
+            if let Some(entry) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, VerifierLogEntry>(&DataKey::VerifierLog(i))
+            {
+                out.push_back(entry);
+            }
+        }
+        out
+    }
+
+    pub fn version(env: Env) -> String {
+        String::from_str(&env, env!("CARGO_PKG_VERSION"))
     }
 }
