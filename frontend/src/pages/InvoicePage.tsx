@@ -5,6 +5,7 @@ import { CONTRACT_IDS, fetchContractEvents } from "../lib/stellar";
 import { useAmountValidation } from "../lib/validation";
 import { PageHeader, Card, Field, Icon, Skeleton } from "../components/ui";
 import WalletGuard from "../components/WalletGuard";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../lib/toast";
 import type { InvoiceMeta, ContractEvent } from "../types";
 
@@ -56,6 +57,11 @@ export default function InvoicePage() {
   // ── Events ───────────────────────────────────────────────────────────────
   const [events, setEvents] = useState<ContractEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Validations
   const issueAmountValidation = useAmountValidation(issueAmount);
@@ -99,7 +105,7 @@ export default function InvoicePage() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  const handleIssue = async (e: React.FormEvent) => {
+  const handleIssue = (e: React.FormEvent) => {
     e.preventDefault();
     if (!connected || !address) return;
     if (!issueAmountValidation.isValid) {
@@ -387,6 +393,15 @@ export default function InvoicePage() {
       )}
 
       <RecentTransactions events={events} loading={eventsLoading} />
+
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          description={confirm.description}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
     </div>
   );
 }

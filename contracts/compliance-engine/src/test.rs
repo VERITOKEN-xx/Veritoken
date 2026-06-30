@@ -19,7 +19,8 @@ fn setup() -> (Env, ComplianceEngineClient<'static>, Address) {
 
     let contract_id = env.register(ComplianceEngine, ());
     let client = ComplianceEngineClient::new(&env, &contract_id);
-    client.initialize(&admin, &kyc_id);
+    // rule_change_delay=0 so set_rules / propose_rules tests remain synchronous
+    client.initialize(&admin, &kyc_id, &0u64);
     (env, client, admin)
 }
 
@@ -197,7 +198,7 @@ fn test_only_admin_can_set_rules() {
 
     let contract_id = env.register(ComplianceEngine, ());
     let client = ComplianceEngineClient::new(&env, &contract_id);
-    client.initialize(&admin, &kyc_id);
+    client.initialize(&admin, &kyc_id, &0u64);
 
     // Remove blanket auth — subsequent calls have no auth, so require_admin should fail
     env.set_auths(&[]);
@@ -222,11 +223,11 @@ fn setup_with_kyc_registry() -> (
     let kyc = KycRegistryClient::new(&env, &kyc_id);
     kyc.initialize(&admin);
     let verifier = Address::generate(&env);
-    kyc.add_verifier(&verifier);
+    kyc.add_verifier(&admin, &verifier);
 
     let ce_id = env.register(ComplianceEngine, ());
     let ce = ComplianceEngineClient::new(&env, &ce_id);
-    ce.initialize(&admin, &kyc_id);
+    ce.initialize(&admin, &kyc_id, &0u64);
 
     (env, ce, kyc, verifier, admin)
 }
@@ -299,7 +300,7 @@ fn test_require_same_jurisdiction_blocks_cross_jurisdiction_transfer() {
     let kyc = KycRegistryClient::new(&env, &kyc_id);
     kyc.initialize(&admin);
     let verifier = Address::generate(&env);
-    kyc.add_verifier(&verifier);
+    kyc.add_verifier(&admin, &verifier);
 
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
@@ -310,7 +311,7 @@ fn test_require_same_jurisdiction_blocks_cross_jurisdiction_transfer() {
 
     let ce_id = env.register(ComplianceEngine, ());
     let ce = ComplianceEngineClient::new(&env, &ce_id);
-    ce.initialize(&admin, &kyc_id);
+    ce.initialize(&admin, &kyc_id, &0u64);
 
     ce.set_rules(&ComplianceRules {
         max_transfer_amount: 0,
