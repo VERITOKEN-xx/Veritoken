@@ -11,6 +11,7 @@ const NAV = [
   { to: "/kyc", label: "KYC" },
   { to: "/admin", label: "Admin" },
   { to: "/deploy", label: "Deploy" },
+  { to: "/docs", label: "Docs" },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {

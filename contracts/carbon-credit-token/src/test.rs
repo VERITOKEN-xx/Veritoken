@@ -25,6 +25,8 @@ fn meta(env: &Env) -> ProjectMeta {
         country: String::from_str(env, "BR"),
         verifier: String::from_str(env, "Verra"),
         ipfs_cert_hash: String::from_str(env, "Qm..."),
+        registry_url: String::from_str(env, "https://registry.verra.org"),
+        registry_project_id: String::from_str(env, "VCS-1234"),
     }
 }
 

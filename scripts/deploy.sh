@@ -89,7 +89,7 @@ CARBON_ID=$(stellar contract deploy \
   --admin "$ADMIN_ADDR" \
   --kyc-registry "$KYC_ID" \
   --compliance-engine "$CE_ID" \
-  --meta '{"project_id":"PLACEHOLDER","standard":"VCS","vintage_year":2024,"project_name":"","project_type":"forestry","country":"","verifier":"","ipfs_cert_hash":""}')
+  --meta '{"project_id":"PLACEHOLDER","standard":"VCS","vintage_year":2024,"project_name":"","project_type":"forestry","country":"","verifier":"","ipfs_cert_hash":"","registry_url":"","registry_project_id":""}')
 echo "    CARBON_TOKEN_ID=$CARBON_ID"
 
 echo ""

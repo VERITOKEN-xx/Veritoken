@@ -267,6 +267,8 @@ impl PropertyToken {
         Self::reset_debt(&env, to.clone());
         Self::register_holder(&env, &to);
         Self::add_holder_local(&env, &to);
+        let minted: i128 = env.storage().instance().get(&DataKey::MintedShares).unwrap_or(0);
+        env.storage().instance().set(&DataKey::MintedShares, &(minted + shares));
         env.events().publish((symbol_short!("mint"), to), shares);
     }
 
@@ -333,6 +335,8 @@ impl PropertyToken {
         if balance == shares {
             Self::remove_holder_local(&env, &from);
         }
+        let minted: i128 = env.storage().instance().get(&DataKey::MintedShares).unwrap_or(0);
+        env.storage().instance().set(&DataKey::MintedShares, &(minted - shares));
         // Emit buyback event
         env.events().publish((symbol_short!("buyback"),), (from, shares));
     }
