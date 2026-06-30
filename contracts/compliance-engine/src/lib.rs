@@ -32,6 +32,7 @@ pub enum DataKey {
     MaxHolders,
     HolderCount,
     HolderSince(Address),
+    Allowlist,
 }
 
 #[contracttype]
@@ -42,6 +43,7 @@ pub struct ComplianceRules {
     pub max_holders: u32,          // 0 = unlimited
     pub require_same_jurisdiction: bool,
     pub paused: bool,
+    pub allowlist_mode: bool,      // true = only allowlisted addresses may transfer
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -68,6 +70,7 @@ impl ComplianceEngine {
             max_holders: 0,
             require_same_jurisdiction: false,
             paused: false,
+            allowlist_mode: false,
         };
         env.storage()
             .instance()
@@ -149,12 +152,44 @@ impl ComplianceEngine {
         Self::blocklist(&env).contains(&addr)
     }
 
+    // ── Allowlist ────────────────────────────────────────────────────────────
+
+    pub fn add_to_allowlist(env: Env, addr: Address) {
+        Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let mut list = Self::allowlist(&env);
+        if !list.contains(&addr) {
+            list.push_back(addr.clone());
+        }
+        env.storage().instance().set(&DataKey::Allowlist, &list);
+        env.events().publish((symbol_short!("al_add"),), addr);
+    }
+
+    pub fn remove_from_allowlist(env: Env, addr: Address) {
+        Self::require_admin(&env);
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let list = Self::allowlist(&env);
+        let mut new_list: Vec<Address> = Vec::new(&env);
+        for a in list.iter() {
+            if a != addr {
+                new_list.push_back(a);
+            }
+        }
+        env.storage().instance().set(&DataKey::Allowlist, &new_list);
+        env.events().publish((symbol_short!("al_rem"),), addr);
+    }
+
+    pub fn is_allowlisted(env: Env, addr: Address) -> bool {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        Self::allowlist(&env).contains(&addr)
+    }
+
     // ── Jurisdiction blocklist ───────────────────────────────────────────────
 
     pub fn add_blocked_jurisdiction(env: Env, jurisdiction: String) {
         Self::require_admin(&env);
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        let mut list = Self::blocked_jurisdictions(&env);
+        let mut list = Self::get_blocked_jurisdictions(env.clone());
         if !list.contains(&jurisdiction) {
             list.push_back(jurisdiction.clone());
         }
@@ -168,7 +203,7 @@ impl ComplianceEngine {
     pub fn remove_blocked_jurisdiction(env: Env, jurisdiction: String) {
         Self::require_admin(&env);
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        let list = Self::blocked_jurisdictions(&env);
+        let list = Self::get_blocked_jurisdictions(env.clone());
         let mut new_list: Vec<String> = Vec::new(&env);
         for j in list.iter() {
             if j != jurisdiction {
@@ -184,7 +219,10 @@ impl ComplianceEngine {
 
     pub fn get_blocked_jurisdictions(env: Env) -> Vec<String> {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
-        Self::blocked_jurisdictions(&env)
+        env.storage()
+            .instance()
+            .get(&DataKey::BlockedJurisdictions)
+            .unwrap_or_else(|| Vec::new(&env))
     }
 
     pub fn pause(env: Env) {
@@ -222,7 +260,7 @@ impl ComplianceEngine {
             return false;
         }
 
-        let blocked_jurisdictions = Self::blocked_jurisdictions(&env);
+        let blocked_jurisdictions = Self::get_blocked_jurisdictions(env.clone());
         if !blocked_jurisdictions.is_empty() {
             let kyc_registry: Address = env
                 .storage()
@@ -342,6 +380,13 @@ impl ComplianceEngine {
         env.storage()
             .instance()
             .get(&DataKey::Blocklist)
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    fn allowlist(env: &Env) -> Vec<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Allowlist)
             .unwrap_or_else(|| Vec::new(env))
     }
 
