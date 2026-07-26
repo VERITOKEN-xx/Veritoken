@@ -21,7 +21,7 @@ import {
 import { NETWORK_PASSPHRASE, simulateAndSend } from "../stellar";
 
 // A stable dummy address used only for read simulations.
-const DUMMY_SOURCE = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
+const DUMMY_SOURCE = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
 
 export type SignTx = (xdr: string) => Promise<string>;
 

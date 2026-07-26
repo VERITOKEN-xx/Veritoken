@@ -55,7 +55,7 @@ export default function AdminPage() {
       try {
         const contract = new Contract(CONTRACT_IDS.complianceEngine);
         const dummyAccount = new Account(
-          "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+          "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR",
           "0"
         );
         const tx = new TransactionBuilder(dummyAccount, {

@@ -64,7 +64,7 @@ describe("decodeContractError", () => {
 
 describe("validateStellarAddress", () => {
   it("accepts a valid 56-char G address", () => {
-    expect(validateStellarAddress("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN")).toBe(true);
+    expect(validateStellarAddress("GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR")).toBe(true);
   });
 
   it("rejects an empty string", () => {

@@ -1,9 +1,45 @@
 /* ============================================================================
-   Veritoken — design system
-   A dark, glass-and-gradient aesthetic tuned for a premium fintech feel.
+   Veritoken — design system  (issue #380: light + dark theme support)
+   ============================================================================
+   Tokens are declared on :root (dark by default) and overridden under
+   [data-theme="light"].  The ThemeProvider sets data-theme on <html>.
    ========================================================================== */
 
+/* ── Shared / invariant tokens ──────────────────────────────────────────── */
 :root {
+  /* Brand accent palette — same in both themes */
+  --accent: #6366f1;
+  --accent-2: #8b5cf6;
+  --accent-3: #22d3ee;
+  --accent-soft: rgba(99, 102, 241, 0.16);
+  --gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%);
+  --gradient-cyan: linear-gradient(135deg, #22d3ee 0%, #6366f1 100%);
+
+  /* Semantic */
+  --success: #10b981;
+  --success-soft: rgba(16, 185, 129, 0.14);
+  --warning: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, 0.14);
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+
+  /* Geometry */
+  --radius: 16px;
+  --radius-sm: 10px;
+
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Dark theme (default) ───────────────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
   /* Surfaces */
   --bg: #060912;
   --bg-elev: #0b1020;
@@ -17,35 +53,65 @@
   --text-muted: #8b95ab;
   --text-faint: #5b6577;
 
-  /* Brand */
-  --accent: #6366f1;
-  --accent-2: #8b5cf6;
-  --accent-3: #22d3ee;
-  --accent-soft: rgba(99, 102, 241, 0.16);
-  --gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%);
-  --gradient-cyan: linear-gradient(135deg, #22d3ee 0%, #6366f1 100%);
-
-  /* Semantic */
-  --success: #34d399;
-  --success-soft: rgba(52, 211, 153, 0.14);
-  --warning: #fbbf24;
-  --warning-soft: rgba(251, 191, 36, 0.14);
-  --danger: #f87171;
-  --danger-soft: rgba(248, 113, 113, 0.14);
-
   /* Effects */
-  --radius: 16px;
-  --radius-sm: 10px;
   --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-glow: 0 0 0 1px rgba(99, 102, 241, 0.35), 0 12px 40px rgba(99, 102, 241, 0.28);
 
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-feature-settings: "cv11", "ss01";
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  color-scheme: dark;
+  /* Body gradient */
+  --body-gradient:
+    radial-gradient(1100px 600px at 12% -8%, rgba(99, 102, 241, 0.22), transparent 60%),
+    radial-gradient(900px 600px at 100% 0%, rgba(168, 85, 247, 0.16), transparent 55%),
+    radial-gradient(700px 500px at 50% 120%, rgba(34, 211, 238, 0.10), transparent 60%);
+}
+
+/* ── Light theme ────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg: #f4f5f9;
+  --bg-elev: #ffffff;
+  --surface: rgba(255, 255, 255, 0.80);
+  --surface-2: rgba(255, 255, 255, 0.95);
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.16);
+
+  /* Text */
+  --text: #0f1422;
+  --text-muted: #5a6278;
+  --text-faint: #9ba3b6;
+
+  /* Effects */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.09);
+  --shadow-glow: 0 0 0 1px rgba(99, 102, 241, 0.25), 0 12px 40px rgba(99, 102, 241, 0.15);
+
+  /* Body gradient — lighter, more pastel */
+  --body-gradient:
+    radial-gradient(1100px 600px at 12% -8%, rgba(99, 102, 241, 0.08), transparent 60%),
+    radial-gradient(900px 600px at 100% 0%, rgba(168, 85, 247, 0.06), transparent 55%),
+    radial-gradient(700px 500px at 50% 120%, rgba(34, 211, 238, 0.04), transparent 60%);
+}
+
+/* ── System preference fallback (no data-theme set yet) ─────────────────── */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg: #f4f5f9;
+    --bg-elev: #ffffff;
+    --surface: rgba(255, 255, 255, 0.80);
+    --surface-2: rgba(255, 255, 255, 0.95);
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.16);
+    --text: #0f1422;
+    --text-muted: #5a6278;
+    --text-faint: #9ba3b6;
+    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.09);
+    --shadow-glow: 0 0 0 1px rgba(99, 102, 241, 0.25), 0 12px 40px rgba(99, 102, 241, 0.15);
+    --body-gradient:
+      radial-gradient(1100px 600px at 12% -8%, rgba(99, 102, 241, 0.08), transparent 60%),
+      radial-gradient(900px 600px at 100% 0%, rgba(168, 85, 247, 0.06), transparent 55%),
+      radial-gradient(700px 500px at 50% 120%, rgba(34, 211, 238, 0.04), transparent 60%);
+  }
 }
 
 * {
@@ -60,20 +126,30 @@ html {
 
 body {
   background-color: var(--bg);
-  background-image:
-    radial-gradient(1100px 600px at 12% -8%, rgba(99, 102, 241, 0.22), transparent 60%),
-    radial-gradient(900px 600px at 100% 0%, rgba(168, 85, 247, 0.16), transparent 55%),
-    radial-gradient(700px 500px at 50% 120%, rgba(34, 211, 238, 0.10), transparent 60%);
+  background-image: var(--body-gradient);
   background-attachment: fixed;
   color: var(--text);
   min-height: 100vh;
   line-height: 1.55;
   letter-spacing: -0.011em;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 ::selection {
   background: var(--accent-soft);
   color: #fff;
+}
+
+/* ── Focus states (accessibility, issue #380) ─────────────────────────────*/
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Remove default focus ring — we use :focus-visible above */
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 a {

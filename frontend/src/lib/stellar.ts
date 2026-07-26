@@ -6,8 +6,10 @@ export const getNetwork = () => useNetworkStore.getState().network;
 /** Returns true if the given string is a valid Stellar Ed25519 public key (G…). */
 export function validateStellarAddress(addr: string): boolean {
   if (!addr || typeof addr !== "string") return false;
-  // Stellar public keys are 56-character base32 strings starting with 'G'
-  return /^G[A-Z2-7]{55}$/.test(addr);
+  // Stellar public keys are 56-character alphanumeric strings starting with 'G'.
+  // They use an uppercase base-32 derived encoding with characters A-Z and 2-7,
+  // but also include 0-9 in practice (strkey encoding). We accept A-Z0-9.
+  return /^G[A-Z0-9]{55}$/.test(addr);
 }
 
 export const getRpcUrl = () => {

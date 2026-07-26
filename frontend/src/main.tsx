@@ -4,6 +4,10 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
+import { useThemeStore } from "./lib/theme";
+
+// ── Apply saved theme before first paint (avoids flash) ───────────────────
+useThemeStore.getState().setTheme(useThemeStore.getState().theme);
 
 // ── Environment variable validation ──────────────────────────────────────────
 

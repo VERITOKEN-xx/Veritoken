@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock @stellar/freighter-api before importing the wallet store
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+
 const mockIsConnected = vi.hoisted(() => vi.fn());
 const mockGetPublicKey = vi.hoisted(() => vi.fn());
 const mockSignTransaction = vi.hoisted(() => vi.fn());
@@ -13,7 +16,6 @@ vi.mock("@stellar/freighter-api", () => ({
   setAllowed: mockSetAllowed,
 }));
 
-// Mock stellar.ts to avoid the full SDK initialisation chain
 vi.mock("../stellar", () => ({
   NETWORK_PASSPHRASE: "Test SDF Network ; September 2015",
   getNetwork: () => "testnet",
@@ -26,11 +28,22 @@ vi.mock("../stellar", () => ({
 
 import { useWallet } from "../wallet";
 
+const TEST_ADDRESS = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
+
 beforeEach(() => {
-  // Reset Zustand store state between tests
-  useWallet.setState({ address: null, connected: false });
+  useWallet.setState({
+    address: null,
+    connected: false,
+    connectionError: null,
+    loading: false,
+    adapterName: null,
+  });
   vi.clearAllMocks();
 });
+
+// ---------------------------------------------------------------------------
+// Initial state
+// ---------------------------------------------------------------------------
 
 describe("useWallet initial state", () => {
   it("starts disconnected with no address", () => {
@@ -38,55 +51,138 @@ describe("useWallet initial state", () => {
     expect(address).toBeNull();
     expect(connected).toBe(false);
   });
-});
 
-describe("useWallet.connect", () => {
-  it("throws if Freighter is not installed", async () => {
-    mockIsConnected.mockResolvedValue(false);
-    await expect(useWallet.getState().connect()).rejects.toThrow(
-      /Freighter wallet is not installed/i,
-    );
+  it("starts with no connection error", () => {
+    expect(useWallet.getState().connectionError).toBeNull();
   });
 
+  it("starts with loading false", () => {
+    expect(useWallet.getState().loading).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// connect — success
+// ---------------------------------------------------------------------------
+
+describe("useWallet.connect — success", () => {
   it("sets address and connected=true on success", async () => {
     mockIsConnected.mockResolvedValue(true);
     mockSetAllowed.mockResolvedValue(undefined);
-    mockGetPublicKey.mockResolvedValue("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN");
+    mockGetPublicKey.mockResolvedValue(TEST_ADDRESS);
 
     await useWallet.getState().connect();
 
-    const { address, connected } = useWallet.getState();
+    const { address, connected, connectionError } = useWallet.getState();
     expect(connected).toBe(true);
-    expect(address).toBe("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN");
+    expect(address).toBe(TEST_ADDRESS);
+    expect(connectionError).toBeNull();
+  });
+
+  it("clears loading flag after successful connect", async () => {
+    mockIsConnected.mockResolvedValue(true);
+    mockSetAllowed.mockResolvedValue(undefined);
+    mockGetPublicKey.mockResolvedValue(TEST_ADDRESS);
+
+    await useWallet.getState().connect();
+
+    expect(useWallet.getState().loading).toBe(false);
   });
 });
 
-describe("useWallet.disconnect", () => {
-  it("clears address and sets connected=false", async () => {
-    // First connect
+// ---------------------------------------------------------------------------
+// connect — failure (#381 resilience)
+// ---------------------------------------------------------------------------
+
+describe("useWallet.connect — failure (issue #381)", () => {
+  it("sets connectionError when Freighter is not installed", async () => {
+    mockIsConnected.mockResolvedValue(false);
+
+    await useWallet.getState().connect();
+
+    const { connected, connectionError } = useWallet.getState();
+    expect(connected).toBe(false);
+    expect(connectionError).toMatch(/not installed/i);
+  });
+
+  it("does not throw — error is captured in state", async () => {
+    mockIsConnected.mockResolvedValue(false);
+
+    // Should not throw
+    await expect(useWallet.getState().connect()).resolves.toBeUndefined();
+  });
+
+  it("sets connectionError when getPublicKey rejects", async () => {
     mockIsConnected.mockResolvedValue(true);
     mockSetAllowed.mockResolvedValue(undefined);
-    mockGetPublicKey.mockResolvedValue("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN");
+    mockGetPublicKey.mockRejectedValue(new Error("User rejected"));
+
+    await useWallet.getState().connect();
+
+    expect(useWallet.getState().connectionError).toMatch(/user rejected/i);
+    expect(useWallet.getState().connected).toBe(false);
+  });
+
+  it("clears loading flag on failure", async () => {
+    mockIsConnected.mockResolvedValue(false);
+    await useWallet.getState().connect();
+    expect(useWallet.getState().loading).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// clearError (#381)
+// ---------------------------------------------------------------------------
+
+describe("useWallet.clearError (issue #381)", () => {
+  it("clears the connectionError field", async () => {
+    mockIsConnected.mockResolvedValue(false);
+    await useWallet.getState().connect();
+    expect(useWallet.getState().connectionError).not.toBeNull();
+
+    useWallet.getState().clearError();
+    expect(useWallet.getState().connectionError).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// disconnect
+// ---------------------------------------------------------------------------
+
+describe("useWallet.disconnect", () => {
+  it("clears address and sets connected=false", async () => {
+    mockIsConnected.mockResolvedValue(true);
+    mockSetAllowed.mockResolvedValue(undefined);
+    mockGetPublicKey.mockResolvedValue(TEST_ADDRESS);
     await useWallet.getState().connect();
     expect(useWallet.getState().connected).toBe(true);
 
-    // Then disconnect
     useWallet.getState().disconnect();
     expect(useWallet.getState().address).toBeNull();
     expect(useWallet.getState().connected).toBe(false);
   });
+
+  it("clears connectionError on disconnect", async () => {
+    useWallet.setState({ connectionError: "Some error" });
+    useWallet.getState().disconnect();
+    expect(useWallet.getState().connectionError).toBeNull();
+  });
 });
 
-describe("useWallet.signTx", () => {
-  it("throws if wallet is not connected", async () => {
+// ---------------------------------------------------------------------------
+// signTx (#382 — adapter-backed signing)
+// ---------------------------------------------------------------------------
+
+describe("useWallet.signTx (issue #382)", () => {
+  it("throws with friendly message if wallet not connected", async () => {
     await expect(useWallet.getState().signTx("some-xdr")).rejects.toThrow(
-      /Wallet not connected/i,
+      /wallet not connected/i,
     );
   });
 
-  it("calls freighter signTransaction and returns signed XDR", async () => {
-    // Manually set connected state
-    useWallet.setState({ address: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN", connected: true });
+  it("calls adapter signTransaction and returns signed XDR", async () => {
+    useWallet.setState({ address: TEST_ADDRESS, connected: true });
+    mockIsConnected.mockResolvedValue(true);
     mockSignTransaction.mockResolvedValue("signed-xdr-result");
 
     const result = await useWallet.getState().signTx("input-xdr");
@@ -94,5 +190,15 @@ describe("useWallet.signTx", () => {
     expect(mockSignTransaction).toHaveBeenCalledWith("input-xdr", {
       networkPassphrase: "Test SDF Network ; September 2015",
     });
+  });
+
+  it("wraps signing errors with a friendly message", async () => {
+    useWallet.setState({ address: TEST_ADDRESS, connected: true });
+    mockIsConnected.mockResolvedValue(true);
+    mockSignTransaction.mockRejectedValue(new Error("Ledger timeout"));
+
+    await expect(useWallet.getState().signTx("input-xdr")).rejects.toThrow(
+      /Transaction signing failed/i,
+    );
   });
 });

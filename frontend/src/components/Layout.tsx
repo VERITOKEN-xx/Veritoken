@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useWallet } from "../lib/wallet";
 import { useNetworkStore, type Network } from "../lib/networkStore";
+import ThemeToggle from "./ThemeToggle";
 
 const NAV = [
   { to: "/", label: "Dashboard" },
@@ -16,7 +17,7 @@ const NAV = [
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  const { address, connected, connect, disconnect } = useWallet();
+  const { address, connected, connect, disconnect, loading: walletLoading } = useWallet();
   const { network, setNetwork } = useNetworkStore();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -58,6 +59,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </nav>
 
           <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <ThemeToggle />
             <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
               <button
                 onClick={() => handleNetworkChange("testnet")}
@@ -85,7 +87,9 @@ export default function Layout({ children }: { children: ReactNode }) {
                 </button>
               </div>
             ) : (
-              <button onClick={connect}>Connect Wallet</button>
+              <button onClick={connect} disabled={walletLoading}>
+                {walletLoading ? "Connecting…" : "Connect Wallet"}
+              </button>
             )}
             <button
               className="hamburger"
