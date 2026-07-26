@@ -9,6 +9,7 @@ import AdminPage from "./pages/AdminPage";
 import DeployPage from "./pages/DeployPage";
 import DocsPage from "./pages/DocsPage";
 import ErrorBoundary from "./components/ErrorBoundary";
+import SimulationErrorBoundary from "./components/SimulationErrorBoundary";
 import { ToastProvider } from "./lib/toast";
 
 export default function App() {
@@ -16,14 +17,53 @@ export default function App() {
     <ToastProvider>
       <Layout>
         <Routes>
+          {/* Dashboard uses the generic boundary – no simulation on load */}
           <Route path="/" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
-          <Route path="/invoices" element={<ErrorBoundary><InvoicePage /></ErrorBoundary>} />
-          <Route path="/property" element={<ErrorBoundary><PropertyPage /></ErrorBoundary>} />
-          <Route path="/carbon" element={<ErrorBoundary><CarbonPage /></ErrorBoundary>} />
-          <Route path="/kyc" element={<ErrorBoundary><KycPage /></ErrorBoundary>} />
-          <Route path="/admin" element={<ErrorBoundary><AdminPage /></ErrorBoundary>} />
+
+          {/* Contract-interaction pages use SimulationErrorBoundary so that
+              failed simulations show a recovery UI rather than a blank screen. */}
+          <Route
+            path="/invoices"
+            element={
+              <SimulationErrorBoundary>
+                <InvoicePage />
+              </SimulationErrorBoundary>
+            }
+          />
+          <Route
+            path="/property"
+            element={
+              <SimulationErrorBoundary>
+                <PropertyPage />
+              </SimulationErrorBoundary>
+            }
+          />
+          <Route
+            path="/carbon"
+            element={
+              <SimulationErrorBoundary>
+                <CarbonPage />
+              </SimulationErrorBoundary>
+            }
+          />
+          <Route
+            path="/kyc"
+            element={
+              <SimulationErrorBoundary>
+                <KycPage />
+              </SimulationErrorBoundary>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <SimulationErrorBoundary>
+                <AdminPage />
+              </SimulationErrorBoundary>
+            }
+          />
           <Route path="/deploy" element={<ErrorBoundary><DeployPage /></ErrorBoundary>} />
-          <Route path="/docs" element={<ErrorBoundary><DocsPage /></ErrorBoundary>} />
+          <Route path="/docs"   element={<ErrorBoundary><DocsPage /></ErrorBoundary>} />
         </Routes>
       </Layout>
     </ToastProvider>

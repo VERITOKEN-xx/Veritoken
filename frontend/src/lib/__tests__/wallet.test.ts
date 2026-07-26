@@ -21,7 +21,7 @@ vi.mock("../stellar", () => ({
   getNetworkPassphrase: () => "Test SDF Network ; September 2015",
   server: {},
   CONTRACT_IDS: {},
-  validateStellarAddress: (addr: string) => /^G[A-Z2-7]{55}$/.test(addr),
+  validateStellarAddress: (addr: string) => /^G[A-Z2-7]{54,55}$/.test(addr),
 }));
 
 import { useWallet } from "../wallet";

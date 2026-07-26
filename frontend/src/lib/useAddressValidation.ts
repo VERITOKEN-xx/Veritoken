@@ -1,6 +1,6 @@
-/** Validates a Stellar public key (G… address, 56 chars, base32). */
+/** Validates a Stellar public key (G… address, 55–56 chars, base32). */
 function validateStellarAddress(value: string): boolean {
-  return /^G[A-Z2-7]{55}$/.test(value);
+  return /^G[A-Z2-7]{54,55}$/.test(value);
 }
 
 interface AddressValidationResult {

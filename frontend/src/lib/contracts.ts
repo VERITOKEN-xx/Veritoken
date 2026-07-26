@@ -213,9 +213,44 @@ export class CarbonTokenClient {
 
 // ── Singleton factory ────────────────────────────────────────────────────────
 
-/** Pre-built clients bound to the contract IDs from .env */
+/**
+ * Pre-built clients bound to the contract IDs from .env.
+ *
+ * `carbonToken` — legacy CarbonTokenClient (requires sourceAddress for reads)
+ * All other clients are imported from the unified contracts/index.ts so that
+ * StatusCard, AdminPage, and other consumers that do `import { contracts } from
+ * "../lib/contracts"` get the full set of typed clients.
+ */
+import {
+  KycRegistryClient,
+  ComplianceEngineClient,
+  InvoiceTokenClient,
+  PropertyTokenClient,
+  CarbonTokenClient as NewCarbonTokenClient,
+  RwaTokenClient,
+} from "./contracts/index";
+
 export const contracts = {
   get carbonToken() {
     return new CarbonTokenClient(CONTRACT_IDS.carbonToken);
+  },
+  get kyc() {
+    return new KycRegistryClient(CONTRACT_IDS.kycRegistry, server);
+  },
+  get compliance() {
+    return new ComplianceEngineClient(CONTRACT_IDS.complianceEngine, server);
+  },
+  get invoice() {
+    return new InvoiceTokenClient(CONTRACT_IDS.invoiceToken, server);
+  },
+  get property() {
+    return new PropertyTokenClient(CONTRACT_IDS.propertyToken, server);
+  },
+  get rwa() {
+    return new RwaTokenClient(CONTRACT_IDS.rwaToken, server);
+  },
+  /** New-style carbon client (no sourceAddress required for reads). */
+  get carbon() {
+    return new NewCarbonTokenClient(CONTRACT_IDS.carbonToken, server);
   },
 };
