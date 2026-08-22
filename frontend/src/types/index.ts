@@ -80,6 +80,8 @@ export interface WalletState {
   address: string | null;
   network: string;
   connected: boolean;
+  /** Current wallet provider type (#545). */
+  providerType: "freighter" | "ledger" | "walletconnect";
 }
 
 /** Attestation types supported for off-chain compliance references (#370). */
