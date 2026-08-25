@@ -643,6 +643,22 @@ fn test_batch_transfer_exceeds_max_recipients() {
 }
 
 #[test]
+fn test_batch_transfer_empty_recipients_rejected() {
+    use crate::RwaError;
+    use soroban_sdk::Error;
+
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.mint(&alice, 10_000);
+
+    let recipients = soroban_sdk::Vec::new(&h.env);
+    let res = h.token.try_batch_transfer(&alice, &recipients);
+    assert_eq!(res.unwrap_err().unwrap(), Error::from(RwaError::EmptyBatch));
+    assert_eq!(h.token.balance(&alice), 10_000);
+}
+
+#[test]
 fn test_batch_transfer_zero_amount_entry_rejected() {
     let h = setup();
     let alice = Address::generate(&h.env);
@@ -2410,4 +2426,35 @@ fn test_recovery_new_admin_can_mint_after_recovery() {
     h.approve_kyc(&investor);
     h.token.mint(&new_admin, &investor, &500);
     assert_eq!(h.token.balance(&investor), 500);
+}
+
+#[test]
+fn test_propose_admin_second_call_emits_pending_admin_cleared() {
+    use soroban_sdk::{symbol_short, testutils::Events as _, Symbol, TryFromVal};
+
+    let h = setup();
+    let clear_topic = symbol_short!("adm_clr");
+    let count_clear_events = |h: &Harness| -> usize {
+        h.env
+            .events()
+            .all()
+            .iter()
+            .filter(|(_, topics, _)| {
+                topics.len() == 1
+                    && Symbol::try_from_val(&h.env, &topics.get(0).unwrap())
+                        .map(|s| s == clear_topic)
+                        .unwrap_or(false)
+            })
+            .count()
+    };
+
+    // First proposal: no prior pending admin, so no clear event is emitted.
+    h.token
+        .propose_admin(&h.admin, &Address::generate(&h.env), &h.next_nonce());
+    assert_eq!(count_clear_events(&h), 0);
+
+    // Second proposal overwrites the first pending admin — must emit adm_clr.
+    h.token
+        .propose_admin(&h.admin, &Address::generate(&h.env), &h.next_nonce());
+    assert_eq!(count_clear_events(&h), 1);
 }
