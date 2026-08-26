@@ -82,6 +82,9 @@ pub enum RwaError {
     ProposerCannotApprove = 27,
     /// Execute attempted before the inter-recovery cooldown has elapsed.
     RecoveryCooldown = 28,
+    /// A required contract address (e.g. compliance engine) has not been
+    /// initialised yet.
+    NotInitialized = 29,
 }
 
 // ── Public types ──────────────────────────────────────────────────────────────

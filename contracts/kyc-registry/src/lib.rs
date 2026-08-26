@@ -28,6 +28,8 @@ pub enum KycError {
     AlreadyAtSchemaVersion = 9,
     /// Migration must increment schema version by exactly one.
     MigrationVersionNotSequential = 10,
+    /// Batch subjects list exceeds the maximum of 20 entries.
+    BatchTooLarge = 11,
 }
 
 /// Composite key for per-subject lifecycle history entries.
@@ -279,8 +281,6 @@ impl KycRegistry {
             env.storage()
                 .instance()
                 .set(&DataKey::VerifierCount, &(count + 1));
-        } else {
-            env.storage().instance().set(&DataKey::VerifierList, &list);
         }
         env.events().publish((symbol_short!("add_vrf"),), verifier);
     }
@@ -383,7 +383,7 @@ impl KycRegistry {
         verifier.require_auth();
         Self::require_verifier(&env, &verifier);
         if subjects.len() > 20 {
-            panic!("batch too large");
+            panic_with_error!(env, KycError::BatchTooLarge);
         }
         for (subject, tier, expiry, jurisdiction) in subjects.iter() {
             Self::validate_jurisdiction(&env, &jurisdiction);
@@ -459,7 +459,7 @@ impl KycRegistry {
         verifier.require_auth();
         Self::require_verifier(&env, &verifier);
         if subjects.len() > 20 {
-            panic!("batch too large");
+            panic_with_error!(env, KycError::BatchTooLarge);
         }
         for subject in subjects.iter() {
             let mut record = Self::get_record_or_default(&env, subject.clone(), &verifier);
