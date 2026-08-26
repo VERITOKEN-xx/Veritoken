@@ -230,6 +230,7 @@ pub enum DataKey {
 const DAY_IN_LEDGERS: u32 = 17280;
 const BUMP: u32 = 30 * DAY_IN_LEDGERS;
 const THRESHOLD: u32 = BUMP - DAY_IN_LEDGERS;
+const MAX_HOLDING_PERIOD_DAYS: u64 = 365;
 
 // ── Contract ──────────────────────────────────────────────────────────────────
 
@@ -1439,7 +1440,7 @@ impl ComplianceEngine {
     }
 
     fn validate_rules(env: &Env, rules: &ComplianceRules) {
-        if rules.min_holding_period > 31_536_000 {
+        if rules.min_holding_period > MAX_HOLDING_PERIOD_DAYS * 86_400 {
             panic_with_error!(env, ComplianceError::MinHoldingPeriodExceeds365Days);
         }
         if rules.max_transfer_amount < 0 {
