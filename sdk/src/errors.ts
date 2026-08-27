@@ -25,8 +25,8 @@ export type ContractName =
 // ── RWA Token errors ──────────────────────────────────────────────────────────
 const RWA_ERRORS: ContractError[] = [
   { code: 1, name: "NotInitialized", message: "Contract has not been initialized" },
-  { code: 2, name: "AlreadyInitialized", message: "Contract is already initialized" },
-  { code: 3, name: "Unauthorized", message: "Caller is not authorized to perform this action" },
+  { code: 2, name: "KycNotApproved", message: "Address has not passed KYC verification" },
+  { code: 3, name: "TransferBlocked", message: "Transfer was rejected by the compliance engine" },
   { code: 4, name: "InsufficientBalance", message: "Insufficient token balance" },
   { code: 5, name: "InvalidAmount", message: "Amount must be greater than zero" },
   { code: 6, name: "KycNotApproved", message: "Address has not passed KYC verification" },
@@ -93,20 +93,33 @@ const PROPERTY_ERRORS: ContractError[] = [
 ];
 
 // ── KYC Registry errors ───────────────────────────────────────────────────────
+// Mirrors the KycError enum in contracts/kyc-registry/src/lib.rs
 const KYC_ERRORS: ContractError[] = [
-  { code: 1, name: "NotInitialized", message: "KYC registry has not been initialized" },
-  { code: 2, name: "AlreadyInitialized", message: "KYC registry is already initialized" },
-  { code: 3, name: "Unauthorized", message: "Caller is not authorized to perform this action" },
-  { code: 4, name: "NoPendingAdmin", message: "No pending admin transfer is in progress" },
+  { code: 1,  name: "AlreadyInitialized",          message: "KYC registry is already initialized" },
+  { code: 2,  name: "NotVerifier",                 message: "Caller is not a registered verifier" },
+  { code: 3,  name: "NotApproved",                 message: "Subject does not have an approved KYC record" },
+  { code: 4,  name: "NoRecord",                    message: "No KYC record found for the given address" },
+  { code: 5,  name: "InvalidJurisdiction",         message: "Jurisdiction code must be a 2-letter ISO country code" },
+  { code: 6,  name: "NotAdmin",                    message: "Caller is not a registry admin" },
+  { code: 7,  name: "EmptyAdminList",              message: "Cannot remove the last admin from the registry" },
+  { code: 8,  name: "NotAuthorized",               message: "Caller is neither the subject nor an admin" },
+  { code: 9,  name: "AlreadyAtSchemaVersion",      message: "Contract is already at the requested schema version" },
+  { code: 10, name: "MigrationVersionNotSequential", message: "Migration target version must be exactly one greater than the current version" },
 ];
 
 // ── Compliance Engine errors ──────────────────────────────────────────────────
+// Mirrors the ComplianceError enum in contracts/compliance-engine/src/lib.rs
 const COMPLIANCE_ERRORS: ContractError[] = [
-  { code: 1, name: "NotInitialized", message: "Compliance engine has not been initialized" },
-  { code: 2, name: "AlreadyInitialized", message: "Compliance engine is already initialized" },
-  { code: 3, name: "Unauthorized", message: "Caller is not authorized to perform this action" },
-  { code: 4, name: "RuleChangeTooSoon", message: "Compliance rule change is still in the timelock period" },
-  { code: 5, name: "NoPendingAdmin", message: "No pending admin transfer is in progress" },
+  { code: 1,  name: "AlreadyInitialized",              message: "Compliance engine is already initialized" },
+  { code: 2,  name: "MinHoldingPeriodExceeds365Days",  message: "Minimum holding period cannot exceed 365 days" },
+  { code: 3,  name: "NegativeMaxTransferAmount",       message: "Maximum transfer amount cannot be negative" },
+  { code: 4,  name: "MaxHoldersBelowCurrentCount",     message: "New max-holders limit is below the current holder count" },
+  { code: 5,  name: "NoRulesPending",                  message: "No pending rules proposal to activate" },
+  { code: 6,  name: "TooEarlyToActivate",              message: "The timelock period for the pending rules has not yet elapsed" },
+  { code: 7,  name: "InvalidRiskScore",                message: "Risk score is out of the valid range (0–100)" },
+  { code: 8,  name: "InvalidRiskConfig",               message: "Risk configuration values are invalid" },
+  { code: 9,  name: "AlreadyAtSchemaVersion",          message: "Contract is already at the requested schema version" },
+  { code: 10, name: "MigrationVersionNotSequential",   message: "Migration target version must be exactly one greater than the current version" },
 ];
 
 // ── API ───────────────────────────────────────────────────────────────────────

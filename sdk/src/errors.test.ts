@@ -6,6 +6,24 @@ import {
 } from "./errors.js";
 
 describe("lookupError", () => {
+  it("returns the correct error for known RWA token code 2 (KycNotApproved)", () => {
+    const err = lookupError("rwa", 2);
+    expect(err).toEqual({
+      code: 2,
+      name: "KycNotApproved",
+      message: "Address has not passed KYC verification",
+    });
+  });
+
+  it("returns the correct error for known RWA token code 3 (TransferBlocked)", () => {
+    const err = lookupError("rwa", 3);
+    expect(err).toEqual({
+      code: 3,
+      name: "TransferBlocked",
+      message: "Transfer was rejected by the compliance engine",
+    });
+  });
+
   it("returns the correct error for known RWA token codes", () => {
     const err = lookupError("rwa", 6);
     expect(err).toEqual({
@@ -63,6 +81,50 @@ describe("lookupError", () => {
   it("returns null for unrecognised codes", () => {
     expect(lookupError("rwa", 999)).toBeNull();
     expect(lookupError("kyc", 500)).toBeNull();
+  });
+
+  // ── KYC errors — full enum coverage ────────────────────────────────────────
+  it("returns correct entry for every KycError variant", () => {
+    const expected: Array<[number, string]> = [
+      [1, "AlreadyInitialized"],
+      [2, "NotVerifier"],
+      [3, "NotApproved"],
+      [4, "NoRecord"],
+      [5, "InvalidJurisdiction"],
+      [6, "NotAdmin"],
+      [7, "EmptyAdminList"],
+      [8, "NotAuthorized"],
+      [9, "AlreadyAtSchemaVersion"],
+      [10, "MigrationVersionNotSequential"],
+    ];
+    for (const [code, name] of expected) {
+      const err = lookupError("kyc", code);
+      expect(err, `kyc code ${code}`).not.toBeNull();
+      expect(err!.name, `kyc code ${code} name`).toBe(name);
+      expect(err!.message.length, `kyc code ${code} message`).toBeGreaterThan(0);
+    }
+  });
+
+  // ── Compliance errors — full enum coverage ──────────────────────────────────
+  it("returns correct entry for every ComplianceError variant", () => {
+    const expected: Array<[number, string]> = [
+      [1, "AlreadyInitialized"],
+      [2, "MinHoldingPeriodExceeds365Days"],
+      [3, "NegativeMaxTransferAmount"],
+      [4, "MaxHoldersBelowCurrentCount"],
+      [5, "NoRulesPending"],
+      [6, "TooEarlyToActivate"],
+      [7, "InvalidRiskScore"],
+      [8, "InvalidRiskConfig"],
+      [9, "AlreadyAtSchemaVersion"],
+      [10, "MigrationVersionNotSequential"],
+    ];
+    for (const [code, name] of expected) {
+      const err = lookupError("compliance", code);
+      expect(err, `compliance code ${code}`).not.toBeNull();
+      expect(err!.name, `compliance code ${code} name`).toBe(name);
+      expect(err!.message.length, `compliance code ${code} message`).toBeGreaterThan(0);
+    }
   });
 });
 

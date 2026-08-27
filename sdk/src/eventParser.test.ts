@@ -118,6 +118,22 @@ describe("parseEvent — known event schema", () => {
     expect(e.txHash).toBe("abc123");
     expect(e.contractId).toBe(CONTRACT_ID);
   });
+
+  it("decodes migrated: fromVersion (index 0) and toVersion (index 1), no nonce field", () => {
+    const e = parseEvent(rawEvent(
+      ["migrated"],
+      [nativeToScVal(1, { type: "u32" }), nativeToScVal(2, { type: "u32" })],
+    ));
+    expect(e.name).toBe("migrated");
+    if (e.known && e.name === "migrated") {
+      expect(e.data.fromVersion).toBe(1);
+      expect(e.data.toVersion).toBe(2);
+      // The old, incorrect `nonce` field must not be present
+      expect("nonce" in e.data).toBe(false);
+      // The old, incorrect `newVersion` field must not be present
+      expect("newVersion" in e.data).toBe(false);
+    }
+  });
 });
 
 describe("parseEvent — unknown events", () => {
@@ -125,6 +141,21 @@ describe("parseEvent — unknown events", () => {
     const e = parseEvent(rawEvent(["some_future_event", ALICE], nativeToScVal("payload", { type: "string" })));
     expect(e.name).toBe("some_future_event");
     expect(e.data).toBe("payload");
+  });
+});
+
+describe("asTuple — error path", () => {
+  it("throws when an event with a data-bearing decoder receives null data", () => {
+    // adm_prp expects a (Address, u64) tuple; passing null data must throw.
+    expect(() =>
+      parseEvent(rawEvent(["adm_prp"], null)),
+    ).toThrow("event data is missing");
+  });
+
+  it("throws when an event with a data-bearing decoder receives undefined data", () => {
+    expect(() =>
+      parseEvent(rawEvent(["adm_set"], undefined)),
+    ).toThrow("event data is missing");
   });
 });
 
