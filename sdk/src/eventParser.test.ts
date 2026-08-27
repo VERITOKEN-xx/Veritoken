@@ -128,6 +128,21 @@ describe("parseEvent — unknown events", () => {
   });
 });
 
+describe("asTuple — error path", () => {
+  it("throws when an event with a data-bearing decoder receives null data", () => {
+    // adm_prp expects a (Address, u64) tuple; passing null data must throw.
+    expect(() =>
+      parseEvent(rawEvent(["adm_prp"], null)),
+    ).toThrow("event data is missing");
+  });
+
+  it("throws when an event with a data-bearing decoder receives undefined data", () => {
+    expect(() =>
+      parseEvent(rawEvent(["adm_set"], undefined)),
+    ).toThrow("event data is missing");
+  });
+});
+
 describe("parseEvents / filterByName", () => {
   it("parses a batch and filters by name with a narrowed type", () => {
     const events = parseEvents([

@@ -110,9 +110,11 @@ export type ParsedEvent = KnownParsedEvent | UnknownParsedEvent;
 
 type Decoder = (topics: unknown[], data: unknown) => unknown;
 
-/** Soroban tuples decode to JS arrays; `()` decodes to undefined/null. */
-const asTuple = (data: unknown): unknown[] =>
-  Array.isArray(data) ? data : data === undefined || data === null ? [] : [data];
+/** Soroban tuples decode to JS arrays; throws if the event payload is missing. */
+const asTuple = (data: unknown): unknown[] => {
+  if (data == null) throw new Error("event data is missing");
+  return Array.isArray(data) ? data : [data];
+};
 
 const DECODERS: Record<string, Decoder> = {
   transfer: (topics, data) => {
