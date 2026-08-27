@@ -170,6 +170,7 @@ pub struct KycRecord {
     pub jurisdiction: String,
 }
 
+// 86400 s/day ÷ 5 s/ledger. Also defined in rwa-token and compliance-engine — keep in sync.
 const DAY_IN_LEDGERS: u32 = 17280;
 const BUMP: u32 = 30 * DAY_IN_LEDGERS;
 const THRESHOLD: u32 = BUMP - DAY_IN_LEDGERS;
