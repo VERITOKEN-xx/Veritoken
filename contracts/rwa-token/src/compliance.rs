@@ -24,10 +24,14 @@ pub fn read_compliance_engine(env: &Env) -> Address {
     env.storage()
         .instance()
         .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-    env.storage()
+    match env
+        .storage()
         .instance()
         .get(&DataKey::ComplianceEngine)
-        .expect("compliance engine must be set")
+    {
+        Some(engine) => engine,
+        None => soroban_sdk::panic_with_error!(env, RwaError::NotInitialized),
+    }
 }
 
 pub fn write_compliance_engine(env: &Env, engine: &Address) {
