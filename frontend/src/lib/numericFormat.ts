@@ -28,11 +28,28 @@ export function formatTokenAmount(
   const whole = value / divisor;
   const frac = value % divisor;
 
-  const wholeStr = whole.toLocaleString("en-US");
   const fracStr = frac.toString().padStart(decimals, "0");
-  const trimmed = fracStr.replace(/0+$/, "").slice(0, maxFractionDigits);
 
-  const display = trimmed.length > 0 ? `${wholeStr}.${trimmed}` : wholeStr;
+  let fracDisplay: string;
+  let displayWhole = whole.toLocaleString("en-US");
+
+  if (maxFractionDigits < decimals) {
+    const fracHead = fracStr.slice(0, maxFractionDigits + 1);
+    const roundedNum = Math.round(
+      Number("0." + fracHead) * 10 ** maxFractionDigits,
+    );
+    if (roundedNum >= 10 ** maxFractionDigits) {
+      displayWhole = (whole + 1n).toLocaleString("en-US");
+      fracDisplay = "0".repeat(maxFractionDigits);
+    } else {
+      fracDisplay = roundedNum.toString().padStart(maxFractionDigits, "0");
+    }
+  } else {
+    fracDisplay = fracStr.replace(/0+$/, "").slice(0, maxFractionDigits);
+  }
+
+  const display =
+    fracDisplay.length > 0 ? `${displayWhole}.${fracDisplay}` : displayWhole;
   return symbol ? `${display} ${symbol}` : display;
 }
 
