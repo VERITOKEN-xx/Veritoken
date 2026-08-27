@@ -138,6 +138,8 @@ const TRANSIENT_PATTERNS = [
   /ECONNRESET/i,
   /ECONNREFUSED/i,
   /ETIMEDOUT/i,
+  /ENOTFOUND/i,            // DNS resolution failure
+  /socket hang up/i,       // abrupt connection close
   /network/i,
   /429/,                   // rate-limited
   /503/,                   // service unavailable

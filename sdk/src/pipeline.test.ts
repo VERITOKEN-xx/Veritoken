@@ -88,6 +88,8 @@ describe("isTransientError", () => {
   it("recognises ECONNRESET", () => expect(isTransientError(new Error("ECONNRESET"))).toBe(true));
   it("recognises 503", () => expect(isTransientError(new Error("HTTP 503"))).toBe(true));
   it("recognises 429", () => expect(isTransientError(new Error("429 Too Many Requests"))).toBe(true));
+  it("recognises ENOTFOUND (DNS failure)", () => expect(isTransientError(new Error("getaddrinfo ENOTFOUND rpc.testnet.stellar.org"))).toBe(true));
+  it("recognises socket hang up", () => expect(isTransientError(new Error("socket hang up"))).toBe(true));
   it("does not flag contract errors", () => expect(isTransientError(new Error("Error(Contract, #6)"))).toBe(false));
 });
 
