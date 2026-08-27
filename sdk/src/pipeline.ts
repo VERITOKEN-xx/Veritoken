@@ -68,7 +68,7 @@ export class SimulationError extends TxError {
     cause?: unknown,
   ) {
     super(
-      detail === "no return value"
+      detail.toLowerCase().includes("no return value")
         ? `No return value from ${method}`
         : `Simulation error calling ${method}: ${detail}`,
       "simulation",

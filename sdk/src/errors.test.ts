@@ -6,6 +6,24 @@ import {
 } from "./errors.js";
 
 describe("lookupError", () => {
+  it("returns the correct error for known RWA token code 2 (KycNotApproved)", () => {
+    const err = lookupError("rwa", 2);
+    expect(err).toEqual({
+      code: 2,
+      name: "KycNotApproved",
+      message: "Address has not passed KYC verification",
+    });
+  });
+
+  it("returns the correct error for known RWA token code 3 (TransferBlocked)", () => {
+    const err = lookupError("rwa", 3);
+    expect(err).toEqual({
+      code: 3,
+      name: "TransferBlocked",
+      message: "Transfer was rejected by the compliance engine",
+    });
+  });
+
   it("returns the correct error for known RWA token codes", () => {
     const err = lookupError("rwa", 6);
     expect(err).toEqual({

@@ -25,8 +25,8 @@ export type ContractName =
 // ── RWA Token errors ──────────────────────────────────────────────────────────
 const RWA_ERRORS: ContractError[] = [
   { code: 1, name: "NotInitialized", message: "Contract has not been initialized" },
-  { code: 2, name: "AlreadyInitialized", message: "Contract is already initialized" },
-  { code: 3, name: "Unauthorized", message: "Caller is not authorized to perform this action" },
+  { code: 2, name: "KycNotApproved", message: "Address has not passed KYC verification" },
+  { code: 3, name: "TransferBlocked", message: "Transfer was rejected by the compliance engine" },
   { code: 4, name: "InsufficientBalance", message: "Insufficient token balance" },
   { code: 5, name: "InvalidAmount", message: "Amount must be greater than zero" },
   { code: 6, name: "KycNotApproved", message: "Address has not passed KYC verification" },
