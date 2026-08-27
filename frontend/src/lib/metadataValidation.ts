@@ -44,6 +44,9 @@ export function validateTokenSymbol(value: string): ValidationResult {
   return OK;
 }
 
+const VINTAGE_YEAR_MIN = 1990;
+const VINTAGE_YEAR_MAX = 2050;
+
 /** ISIN: exactly 12 chars, 2-letter uppercase country code + 10 uppercase alphanumeric. */
 export function validateIsin(value: string): ValidationResult {
   if (!value) return OK;
@@ -97,8 +100,8 @@ export function validateVintageYear(value: string): ValidationResult {
   const n = parseInt(value, 10);
   if (isNaN(n) || String(n) !== value.trim())
     return fail("Vintage year must be a whole number");
-  if (n < 1990 || n > 2050)
-    return fail("Vintage year must be between 1990 and 2050");
+  if (n < VINTAGE_YEAR_MIN || n > VINTAGE_YEAR_MAX)
+    return fail(`Vintage year must be between ${VINTAGE_YEAR_MIN} and ${VINTAGE_YEAR_MAX}`);
   return OK;
 }
 
