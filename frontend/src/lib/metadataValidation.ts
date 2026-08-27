@@ -66,8 +66,8 @@ export function validateIsin(value: string): ValidationResult {
 export function validateIpfsHash(value: string): ValidationResult {
   if (!value) return OK;
   if (value.startsWith("Qm")) {
-    if (value.length < 46)
-      return fail("CIDv0 hashes must be at least 46 characters (starts with Qm)");
+    if (value.length !== 46)
+      return fail("CIDv0 hashes must be exactly 46 characters (starts with Qm)");
     return OK;
   }
   if (value.startsWith("baf")) {

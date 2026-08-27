@@ -46,7 +46,7 @@ describe("validateIpfsHash", () => {
     expect(validateIpfsHash("").isValid).toBe(true);
   });
 
-  it("accepts a valid CIDv0 (starts with Qm, ≥46 chars)", () => {
+  it("accepts a valid CIDv0 (starts with Qm, exactly 46 chars)", () => {
     const cid = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
     expect(validateIpfsHash(cid).isValid).toBe(true);
   });
@@ -55,6 +55,12 @@ describe("validateIpfsHash", () => {
     const r = validateIpfsHash("QmShort");
     expect(r.isValid).toBe(false);
     expect(r.error).toMatch(/46 characters/i);
+  });
+
+  it("rejects a CIDv0 that is too long", () => {
+    const cid = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdGX";
+    expect(validateIpfsHash(cid).isValid).toBe(false);
+    expect(cid.length).toBeGreaterThan(46);
   });
 
   it("accepts a valid CIDv1 (starts with baf, ≥59 chars)", () => {
