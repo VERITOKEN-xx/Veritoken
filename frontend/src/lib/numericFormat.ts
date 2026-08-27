@@ -23,7 +23,7 @@ export function formatTokenAmount(
   options?: { maxFractionDigits?: number; symbol?: string },
 ): string {
   const { maxFractionDigits = decimals, symbol } = options ?? {};
-  const divisor = BigInt(10 ** decimals);
+  const divisor = 10n ** BigInt(decimals);
 
   const whole = value / divisor;
   const frac = value % divisor;

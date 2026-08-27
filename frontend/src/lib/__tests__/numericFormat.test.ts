@@ -56,6 +56,16 @@ describe("formatTokenAmount", () => {
       formatTokenAmount(1_999_999n, 6, { maxFractionDigits: 2 }),
     ).toBe("2.00");
   });
+
+  it("uses exact integer arithmetic for decimals=18 (no floating-point loss)", () => {
+    // 1 * 10^18 smallest units should format as exactly "1"
+    const oneUnit = 10n ** 18n;
+    expect(formatTokenAmount(oneUnit, 18)).toBe("1");
+
+    // 1.000000000000000001 — the last ULP, would be lost with float arithmetic
+    const oneUnitPlusOne = oneUnit + 1n;
+    expect(formatTokenAmount(oneUnitPlusOne, 18)).toBe("1.000000000000000001");
+  });
 });
 
 describe("formatStroops", () => {
