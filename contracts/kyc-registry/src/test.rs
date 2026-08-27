@@ -548,17 +548,17 @@ fn test_double_reject_records_both_transitions() {
 // ── Expiry edge cases ─────────────────────────────────────────────────────────
 
 #[test]
-fn test_approved_at_boundary_expiry_is_active() {
+fn test_approved_at_boundary_expiry_is_expired() {
     let (env, client, admin) = setup();
     let verifier = Address::generate(&env);
     let subject = Address::generate(&env);
     client.add_verifier(&admin, &verifier);
 
     env.ledger().set_timestamp(1_000);
-    // expiry == current timestamp: the check is `expiry < now`, so expiry == now is still active
+    // expiry == current timestamp: the check is `expiry <= now`, so expiry == now is expired
     client.approve(&verifier, &subject, &0, &1_000, &js(&env, "US"));
-    // is_approved checks: expiry != 0 && expiry < now → 1000 < 1000 is false → still approved
-    assert!(client.is_approved(&subject));
+    // is_approved checks: expiry != 0 && expiry <= now → 1000 <= 1000 is true → expired
+    assert!(!client.is_approved(&subject));
 }
 
 #[test]

@@ -174,6 +174,7 @@ pub struct KycRecord {
 const DAY_IN_LEDGERS: u32 = 17280;
 const BUMP: u32 = 30 * DAY_IN_LEDGERS;
 const THRESHOLD: u32 = BUMP - DAY_IN_LEDGERS;
+const MAX_REVOKE_BATCH: u32 = 50; // instruction-budget cap per transaction
 
 #[contract]
 pub struct KycRegistry;
@@ -490,9 +491,9 @@ impl KycRegistry {
             .storage()
             .persistent()
             .get::<DataKey, KycRecord>(&DataKey::KycStatus(subject.clone()))
-            .expect("no KYC record for subject");
+            .unwrap_or_else(|| panic_with_error!(env, KycError::NoRecord));
         if record.status != KycStatus::Approved {
-            panic!("subject is not currently approved");
+            panic_with_error!(env, KycError::NotApproved);
         }
         record.tier = new_tier;
         Self::record_transition(
@@ -521,7 +522,7 @@ impl KycRegistry {
             .persistent()
             .get(&key)
             .unwrap_or_else(|| Vec::new(&env));
-        let cap: u32 = 50;
+        let cap = MAX_REVOKE_BATCH;
         let count = subjects.len().min(cap);
         let mut revoked: u32 = 0;
         for i in 0..count {
@@ -560,7 +561,7 @@ impl KycRegistry {
             if record.status != KycStatus::Approved {
                 return false;
             }
-            if record.expiry != 0 && record.expiry < env.ledger().timestamp() {
+            if record.expiry != 0 && record.expiry <= env.ledger().timestamp() {
                 return false;
             }
             true
@@ -588,7 +589,7 @@ impl KycRegistry {
             None => KycState::Missing,
             Some(record) => match record.status {
                 KycStatus::Approved => {
-                    if record.expiry != 0 && record.expiry < env.ledger().timestamp() {
+                    if record.expiry != 0 && record.expiry <= env.ledger().timestamp() {
                         KycState::Expired
                     } else {
                         KycState::Approved
