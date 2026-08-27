@@ -38,6 +38,24 @@ describe("formatTokenAmount", () => {
   it("handles zero", () => {
     expect(formatTokenAmount(0n, 7)).toBe("0");
   });
+
+  it("rounds down when the digit after the cut is < 5", () => {
+    expect(
+      formatTokenAmount(1_004_999n, 6, { maxFractionDigits: 2 }),
+    ).toBe("1.00");
+  });
+
+  it("rounds up when the digit after the cut is >= 5", () => {
+    expect(
+      formatTokenAmount(1_005_000n, 6, { maxFractionDigits: 2 }),
+    ).toBe("1.01");
+  });
+
+  it("carries into the whole part when rounding overflows the fraction", () => {
+    expect(
+      formatTokenAmount(1_999_999n, 6, { maxFractionDigits: 2 }),
+    ).toBe("2.00");
+  });
 });
 
 describe("formatStroops", () => {

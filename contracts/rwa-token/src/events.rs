@@ -15,6 +15,7 @@
 /// | emit_unfreeze         | ("unfreeze", addr)              | ()                                |
 /// | emit_admin_proposed   | ("adm_prp",)                    | (new_admin: Address, nonce: u64)  |
 /// | emit_admin_set        | ("adm_set",)                    | (old: Address, new: Address)      |
+/// | emit_pending_admin_cleared | ("adm_clr",)               | ()                                 |
 /// | emit_kyc_updated      | ("kyc_upd",)                    | (new_registry: Address, nonce: u64) |
 /// | emit_ce_updated       | ("ce_upd",)                     | (new_engine: Address, nonce: u64) |
 /// | emit_role_assigned    | ("role_set",)                   | (role: Symbol, holder: Address, nonce: u64) |
@@ -33,7 +34,7 @@
 /// (The base64 value encodes the `Symbol` "transfer".)
 ///
 /// Iterate returned events; each entry's `value.xdr` decodes to the data tuple.
-use soroban_sdk::{symbol_short, Address, Env, Symbol};
+use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
 
 pub fn emit_transfer(env: &Env, from: Address, to: Address, amount: i128) {
     env.events().publish(
@@ -87,6 +88,10 @@ pub fn emit_admin_set(env: &Env, old_admin: Address, new_admin: Address) {
         .publish((symbol_short!("adm_set"),), (old_admin, new_admin));
 }
 
+pub fn emit_pending_admin_cleared(env: &Env) {
+    env.events().publish((symbol_short!("adm_clr"),), ());
+}
+
 pub fn emit_kyc_updated(env: &Env, new_registry: Address, nonce: u64) {
     env.events()
         .publish((symbol_short!("kyc_upd"),), (new_registry, nonce));
@@ -129,4 +134,13 @@ pub fn emit_recovery_executed(env: &Env, old_admin: Address, new_admin: Address)
 
 pub fn emit_recovery_cancelled(env: &Env) {
     env.events().publish((symbol_short!("rcv_can"),), ());
+}
+
+pub fn emit_external_uri(env: &Env, uri: String) {
+    env.events().publish((symbol_short!("ext_uri"),), uri);
+}
+
+pub fn emit_external_uri_cleared(env: &Env) {
+    env.events()
+        .publish((Symbol::new(env, "ext_uri_cleared"),), ());
 }

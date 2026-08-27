@@ -24,10 +24,14 @@ pub fn read_compliance_engine(env: &Env) -> Address {
     env.storage()
         .instance()
         .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-    env.storage()
+    match env
+        .storage()
         .instance()
         .get(&DataKey::ComplianceEngine)
-        .expect("compliance engine must be set")
+    {
+        Some(engine) => engine,
+        None => soroban_sdk::panic_with_error!(env, RwaError::NotInitialized),
+    }
 }
 
 pub fn write_compliance_engine(env: &Env, engine: &Address) {
@@ -88,6 +92,29 @@ pub fn check_transfer(env: &Env, from: &Address, to: &Address, amount: i128) {
                 _ => soroban_sdk::panic_with_error!(env, RwaError::TransferBlocked),
             }
         }
+        Ok(Err(_)) | Err(_) => {
+            soroban_sdk::panic_with_error!(env, RwaError::ComplianceEngineUnavailable)
+        }
+    }
+}
+
+/// Cross-contract call to the compliance engine to validate an inbound mint.
+///
+/// Minting has no real holder on the sending side — evaluating it with the
+/// recipient as both `from` and `to` (a self-transfer) lets the engine's
+/// `from`-side checks pass or fail based on the recipient's own state rather
+/// than the mint itself, and requiring `from` to hold KYC (as `evaluate_transfer`
+/// does) is meaningless for a synthetic sender. `to`'s KYC is already verified
+/// by `kyc::require_kyc` before this is called, so `can_transfer` (which skips
+/// the KYC check) is used with the token contract's own address as `from`,
+/// still enforcing every other rule (blocklist, pause, holding period, tier,
+/// holder cap) against a distinct, non-recipient address.
+pub fn check_mint(env: &Env, to: &Address, amount: i128) {
+    let engine = read_compliance_engine(env);
+    let client = ComplianceEngineClient::new(env, &engine);
+    match client.try_can_transfer(&env.current_contract_address(), to, &amount) {
+        Ok(Ok(true)) => {}
+        Ok(Ok(false)) => soroban_sdk::panic_with_error!(env, RwaError::TransferBlocked),
         Ok(Err(_)) | Err(_) => {
             soroban_sdk::panic_with_error!(env, RwaError::ComplianceEngineUnavailable)
         }

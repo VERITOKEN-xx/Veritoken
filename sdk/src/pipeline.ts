@@ -68,7 +68,7 @@ export class SimulationError extends TxError {
     cause?: unknown,
   ) {
     super(
-      detail === "no return value"
+      detail.toLowerCase().includes("no return value")
         ? `No return value from ${method}`
         : `Simulation error calling ${method}: ${detail}`,
       "simulation",
@@ -138,6 +138,8 @@ const TRANSIENT_PATTERNS = [
   /ECONNRESET/i,
   /ECONNREFUSED/i,
   /ETIMEDOUT/i,
+  /ENOTFOUND/i,            // DNS resolution failure
+  /socket hang up/i,       // abrupt connection close
   /network/i,
   /429/,                   // rate-limited
   /503/,                   // service unavailable

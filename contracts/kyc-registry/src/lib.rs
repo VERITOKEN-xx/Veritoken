@@ -28,6 +28,8 @@ pub enum KycError {
     AlreadyAtSchemaVersion = 9,
     /// Migration must increment schema version by exactly one.
     MigrationVersionNotSequential = 10,
+    /// Batch subjects list exceeds the maximum of 20 entries.
+    BatchTooLarge = 11,
 }
 
 /// Composite key for per-subject lifecycle history entries.
@@ -170,10 +172,11 @@ pub struct KycRecord {
     pub jurisdiction: String,
 }
 
-// 86400 s/day ÷ 5 s/ledger. Also defined in rwa-token and compliance-engine — keep in sync.
+// 86400 s/day ÷ 5 s/ledger = 17280
 const DAY_IN_LEDGERS: u32 = 17280;
 const BUMP: u32 = 30 * DAY_IN_LEDGERS;
 const THRESHOLD: u32 = BUMP - DAY_IN_LEDGERS;
+const MAX_REVOKE_BATCH: u32 = 50; // instruction-budget cap per transaction
 
 #[contract]
 pub struct KycRegistry;
@@ -280,8 +283,6 @@ impl KycRegistry {
             env.storage()
                 .instance()
                 .set(&DataKey::VerifierCount, &(count + 1));
-        } else {
-            env.storage().instance().set(&DataKey::VerifierList, &list);
         }
         env.events().publish((symbol_short!("add_vrf"),), verifier);
     }
@@ -384,7 +385,7 @@ impl KycRegistry {
         verifier.require_auth();
         Self::require_verifier(&env, &verifier);
         if subjects.len() > 20 {
-            panic!("batch too large");
+            panic_with_error!(env, KycError::BatchTooLarge);
         }
         for (subject, tier, expiry, jurisdiction) in subjects.iter() {
             Self::validate_jurisdiction(&env, &jurisdiction);
@@ -460,7 +461,7 @@ impl KycRegistry {
         verifier.require_auth();
         Self::require_verifier(&env, &verifier);
         if subjects.len() > 20 {
-            panic!("batch too large");
+            panic_with_error!(env, KycError::BatchTooLarge);
         }
         for subject in subjects.iter() {
             let mut record = Self::get_record_or_default(&env, subject.clone(), &verifier);
@@ -490,9 +491,9 @@ impl KycRegistry {
             .storage()
             .persistent()
             .get::<DataKey, KycRecord>(&DataKey::KycStatus(subject.clone()))
-            .expect("no KYC record for subject");
+            .unwrap_or_else(|| panic_with_error!(env, KycError::NoRecord));
         if record.status != KycStatus::Approved {
-            panic!("subject is not currently approved");
+            panic_with_error!(env, KycError::NotApproved);
         }
         record.tier = new_tier;
         Self::record_transition(
@@ -521,7 +522,7 @@ impl KycRegistry {
             .persistent()
             .get(&key)
             .unwrap_or_else(|| Vec::new(&env));
-        let cap: u32 = 50;
+        let cap = MAX_REVOKE_BATCH;
         let count = subjects.len().min(cap);
         let mut revoked: u32 = 0;
         for i in 0..count {
@@ -560,7 +561,7 @@ impl KycRegistry {
             if record.status != KycStatus::Approved {
                 return false;
             }
-            if record.expiry != 0 && record.expiry < env.ledger().timestamp() {
+            if record.expiry != 0 && record.expiry <= env.ledger().timestamp() {
                 return false;
             }
             true
@@ -588,7 +589,7 @@ impl KycRegistry {
             None => KycState::Missing,
             Some(record) => match record.status {
                 KycStatus::Approved => {
-                    if record.expiry != 0 && record.expiry < env.ledger().timestamp() {
+                    if record.expiry != 0 && record.expiry <= env.ledger().timestamp() {
                         KycState::Expired
                     } else {
                         KycState::Approved

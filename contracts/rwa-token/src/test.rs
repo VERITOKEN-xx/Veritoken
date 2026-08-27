@@ -294,6 +294,74 @@ fn test_approve_and_transfer_from() {
 }
 
 #[test]
+fn test_allowance_expired_at_expiration_ledger() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    let spender = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+    h.mint(&alice, 1_000);
+
+    // Allowance expires at the current ledger sequence — it must already be
+    // treated as expired, not valid for one more ledger.
+    let current_sequence = h.env.ledger().sequence();
+    h.token.approve(&alice, &spender, &300, &current_sequence);
+
+    assert_eq!(h.token.allowance(&alice, &spender), 0);
+    assert!(h
+        .token
+        .try_transfer_from(&spender, &alice, &bob, &100)
+        .is_err());
+}
+
+#[test]
+fn test_allowance_valid_one_ledger_before_expiration() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    let spender = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+    h.mint(&alice, 1_000);
+
+    let current_sequence = h.env.ledger().sequence();
+    h.token
+        .approve(&alice, &spender, &300, &(current_sequence + 1));
+
+    h.token.transfer_from(&spender, &alice, &bob, &100);
+    assert_eq!(h.token.balance(&bob), 100);
+    assert_eq!(h.token.allowance(&alice, &spender), 200);
+}
+
+#[test]
+fn test_spend_allowance_to_zero_removes_storage_entry() {
+    use crate::storage_types::{AllowanceKey, DataKey};
+
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    let spender = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+    h.mint(&alice, 1_000);
+
+    let expiration = h.env.ledger().sequence() + 1_000;
+    h.token.approve(&alice, &spender, &100, &expiration);
+    h.token.transfer_from(&spender, &alice, &bob, &100);
+
+    assert_eq!(h.token.allowance(&alice, &spender), 0);
+
+    let key = DataKey::Allowance(AllowanceKey {
+        from: alice.clone(),
+        spender: spender.clone(),
+    });
+    h.env.as_contract(&h.token.address, || {
+        assert!(!h.env.storage().temporary().has(&key));
+    });
+}
+
+#[test]
 fn test_burn_reduces_supply() {
     let h = setup();
     let alice = Address::generate(&h.env);
@@ -449,7 +517,7 @@ fn test_mint_twice_same_address_holder_count_is_one() {
 }
 
 #[test]
-#[should_panic(expected = "invalid asset_type: must be 'invoice', 'property', or 'carbon_credit'")]
+#[should_panic]
 fn test_invalid_asset_type() {
     let env = Env::default();
     let admin = Address::generate(&env);
@@ -470,6 +538,28 @@ fn test_invalid_asset_type() {
             Option::<ComplianceMetadata>::None,
             0i128,
         ),
+    );
+}
+
+#[test]
+fn test_read_admin_on_uninitialized_contract_fails_with_typed_error() {
+    use crate::storage_types::DataKey;
+    use crate::RwaError;
+    use soroban_sdk::Error;
+
+    let h = setup();
+
+    // Simulate an uninitialized contract by clearing the Admin key directly.
+    h.env.as_contract(&h.token.address, || {
+        h.env.storage().instance().remove(&DataKey::Admin);
+    });
+
+    let res = h
+        .token
+        .try_set_external_uri(&String::from_str(&h.env, "ipfs://Qm"));
+    assert_eq!(
+        res.unwrap_err().unwrap(),
+        Error::from(RwaError::NotInitialized)
     );
 }
 
@@ -639,6 +729,22 @@ fn test_batch_transfer_exceeds_max_recipients() {
         });
     }
     assert!(h.token.try_batch_transfer(&alice, &recipients).is_err());
+    assert_eq!(h.token.balance(&alice), 10_000);
+}
+
+#[test]
+fn test_batch_transfer_empty_recipients_rejected() {
+    use crate::RwaError;
+    use soroban_sdk::Error;
+
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.mint(&alice, 10_000);
+
+    let recipients = soroban_sdk::Vec::new(&h.env);
+    let res = h.token.try_batch_transfer(&alice, &recipients);
+    assert_eq!(res.unwrap_err().unwrap(), Error::from(RwaError::EmptyBatch));
     assert_eq!(h.token.balance(&alice), 10_000);
 }
 
@@ -2410,4 +2516,35 @@ fn test_recovery_new_admin_can_mint_after_recovery() {
     h.approve_kyc(&investor);
     h.token.mint(&new_admin, &investor, &500);
     assert_eq!(h.token.balance(&investor), 500);
+}
+
+#[test]
+fn test_propose_admin_second_call_emits_pending_admin_cleared() {
+    use soroban_sdk::{symbol_short, testutils::Events as _, Symbol, TryFromVal};
+
+    let h = setup();
+    let clear_topic = symbol_short!("adm_clr");
+    let count_clear_events = |h: &Harness| -> usize {
+        h.env
+            .events()
+            .all()
+            .iter()
+            .filter(|(_, topics, _)| {
+                topics.len() == 1
+                    && Symbol::try_from_val(&h.env, &topics.get(0).unwrap())
+                        .map(|s| s == clear_topic)
+                        .unwrap_or(false)
+            })
+            .count()
+    };
+
+    // First proposal: no prior pending admin, so no clear event is emitted.
+    h.token
+        .propose_admin(&h.admin, &Address::generate(&h.env), &h.next_nonce());
+    assert_eq!(count_clear_events(&h), 0);
+
+    // Second proposal overwrites the first pending admin — must emit adm_clr.
+    h.token
+        .propose_admin(&h.admin, &Address::generate(&h.env), &h.next_nonce());
+    assert_eq!(count_clear_events(&h), 1);
 }

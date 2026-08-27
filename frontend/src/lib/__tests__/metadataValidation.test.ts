@@ -14,8 +14,14 @@ describe("validateIsin", () => {
     expect(validateIsin("").isValid).toBe(true);
   });
 
-  it("accepts a correctly formed ISIN", () => {
-    expect(validateIsin("US1234567890").isValid).toBe(true);
+  it("accepts a correctly formed ISIN with valid check digit", () => {
+    expect(validateIsin("US0378331005").isValid).toBe(true);
+  });
+
+  it("rejects an ISIN with an invalid check digit", () => {
+    const r = validateIsin("US0378331006");
+    expect(r.isValid).toBe(false);
+    expect(r.error).toMatch(/check digit/i);
   });
 
   it("rejects ISIN shorter than 12 characters", () => {
@@ -46,7 +52,7 @@ describe("validateIpfsHash", () => {
     expect(validateIpfsHash("").isValid).toBe(true);
   });
 
-  it("accepts a valid CIDv0 (starts with Qm, ≥46 chars)", () => {
+  it("accepts a valid CIDv0 (starts with Qm, exactly 46 chars)", () => {
     const cid = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
     expect(validateIpfsHash(cid).isValid).toBe(true);
   });
@@ -55,6 +61,12 @@ describe("validateIpfsHash", () => {
     const r = validateIpfsHash("QmShort");
     expect(r.isValid).toBe(false);
     expect(r.error).toMatch(/46 characters/i);
+  });
+
+  it("rejects a CIDv0 that is too long", () => {
+    const cid = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdGX";
+    expect(validateIpfsHash(cid).isValid).toBe(false);
+    expect(cid.length).toBeGreaterThan(46);
   });
 
   it("accepts a valid CIDv1 (starts with baf, ≥59 chars)", () => {
