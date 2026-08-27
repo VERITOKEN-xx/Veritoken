@@ -14,8 +14,14 @@ describe("validateIsin", () => {
     expect(validateIsin("").isValid).toBe(true);
   });
 
-  it("accepts a correctly formed ISIN", () => {
-    expect(validateIsin("US1234567890").isValid).toBe(true);
+  it("accepts a correctly formed ISIN with valid check digit", () => {
+    expect(validateIsin("US0378331005").isValid).toBe(true);
+  });
+
+  it("rejects an ISIN with an invalid check digit", () => {
+    const r = validateIsin("US0378331006");
+    expect(r.isValid).toBe(false);
+    expect(r.error).toMatch(/check digit/i);
   });
 
   it("rejects ISIN shorter than 12 characters", () => {

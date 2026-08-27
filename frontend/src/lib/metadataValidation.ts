@@ -47,7 +47,28 @@ export function validateTokenSymbol(value: string): ValidationResult {
 const VINTAGE_YEAR_MIN = 1990;
 const VINTAGE_YEAR_MAX = 2050;
 
-/** ISIN: exactly 12 chars, 2-letter uppercase country code + 10 uppercase alphanumeric. */
+function isinLuhnValid(isin: string): boolean {
+  let digits = "";
+  for (const ch of isin) {
+    if (ch >= "A" && ch <= "Z") {
+      digits += (ch.charCodeAt(0) - 55).toString();
+    } else {
+      digits += ch;
+    }
+  }
+  let sum = 0;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = parseInt(digits[i], 10);
+    if ((digits.length - i) % 2 === 0) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+/** ISIN: exactly 12 chars, 2-letter uppercase country code + 10 uppercase alphanumeric, valid Luhn check digit. */
 export function validateIsin(value: string): ValidationResult {
   if (!value) return OK;
   if (value.length !== 12)
@@ -56,6 +77,8 @@ export function validateIsin(value: string): ValidationResult {
     return fail("ISIN must start with a 2-letter country code (e.g. US, GB)");
   if (!/^[A-Z0-9]{12}$/.test(value))
     return fail("ISIN must contain only uppercase letters and digits");
+  if (!isinLuhnValid(value))
+    return fail("ISIN check digit is invalid");
   return OK;
 }
 
