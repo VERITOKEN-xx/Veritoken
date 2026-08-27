@@ -30,7 +30,7 @@
  * | ce_upd      | —                    | (new_engine: Address, nonce: u64)  |
  * | role_set    | —                    | (role: Symbol, holder: Address, nonce: u64) |
  * | role_rev    | —                    | (role: Symbol, nonce: u64)         |
- * | migrated    | —                    | (new_version: String, nonce: u64)  |
+ * | migrated    | —                    | (from_version: u32, to_version: u32) |
  * | rcv_exe     | —                    | (old_admin: Address, new_admin: Address) |
  * | kyc_stale   | addr                 | (is_active: bool, expiry: u64)     |
  */
@@ -72,7 +72,7 @@ export interface EventDataMap {
   ce_upd: CeUpdatedEventData;
   role_set: RoleAssignedEventData;
   role_rev: RoleRevokedEventData;
-  migrated: MigrationEventData & { nonce: bigint };
+  migrated: MigrationEventData;
   rcv_exe: RecoveryExecutedEventData;
   kyc_stale: KycStaleEventData;
 }
@@ -162,8 +162,8 @@ const DECODERS: Record<string, Decoder> = {
     return { role, nonce } satisfies RoleRevokedEventData;
   },
   migrated: (_topics, data) => {
-    const [newVersion, nonce] = asTuple(data) as [string, bigint];
-    return { newVersion, nonce } satisfies MigrationEventData & { nonce: bigint };
+    const [fromVersion, toVersion] = asTuple(data) as [number, number];
+    return { fromVersion, toVersion } satisfies MigrationEventData;
   },
   rcv_exe: (_topics, data) => {
     const [oldAdmin, newAdmin] = asTuple(data) as [string, string];

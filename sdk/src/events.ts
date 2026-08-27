@@ -168,8 +168,10 @@ export interface KycStaleEventData {
 }
 
 export interface MigrationEventData {
-  /** The new version string after the migration */
-  newVersion: string;
+  /** The schema version before the migration (data index 0). */
+  fromVersion: number;
+  /** The schema version after the migration (data index 1). */
+  toVersion: number;
 }
 
 export interface RecoveryApprovedEventData {
