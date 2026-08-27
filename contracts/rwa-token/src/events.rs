@@ -15,6 +15,7 @@
 /// | emit_unfreeze         | ("unfreeze", addr)              | ()                                |
 /// | emit_admin_proposed   | ("adm_prp",)                    | (new_admin: Address, nonce: u64)  |
 /// | emit_admin_set        | ("adm_set",)                    | (old: Address, new: Address)      |
+/// | emit_pending_admin_cleared | ("adm_clr",)               | ()                                 |
 /// | emit_kyc_updated      | ("kyc_upd",)                    | (new_registry: Address, nonce: u64) |
 /// | emit_ce_updated       | ("ce_upd",)                     | (new_engine: Address, nonce: u64) |
 /// | emit_role_assigned    | ("role_set",)                   | (role: Symbol, holder: Address, nonce: u64) |
@@ -85,6 +86,10 @@ pub fn emit_admin_proposed(env: &Env, new_admin: Address, nonce: u64) {
 pub fn emit_admin_set(env: &Env, old_admin: Address, new_admin: Address) {
     env.events()
         .publish((symbol_short!("adm_set"),), (old_admin, new_admin));
+}
+
+pub fn emit_pending_admin_cleared(env: &Env) {
+    env.events().publish((symbol_short!("adm_clr"),), ());
 }
 
 pub fn emit_kyc_updated(env: &Env, new_registry: Address, nonce: u64) {

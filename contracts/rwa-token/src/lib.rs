@@ -82,8 +82,10 @@ pub enum RwaError {
     ProposerCannotApprove = 27,
     /// Execute attempted before the inter-recovery cooldown has elapsed.
     RecoveryCooldown = 28,
-    /// `accept_admin` was called but no admin handover has been proposed.
-    NoPendingAdmin = 29,
+    /// An admin-gated call was made before the contract's admin was set.
+    NotInitialized = 29,
+    /// Constructor was called with an unrecognized `asset_type` string.
+    InvalidAssetType = 30,
 }
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -210,7 +212,7 @@ impl RwaToken {
             && asset_type != String::from_str(&env, "property")
             && asset_type != String::from_str(&env, "carbon_credit")
         {
-            panic!("invalid asset_type: must be 'invoice', 'property', or 'carbon_credit'");
+            panic_with_error!(env, RwaError::InvalidAssetType);
         }
         if max_supply < 0 {
             panic_with_error!(env, RwaError::NegativeAmount);
@@ -271,6 +273,9 @@ impl RwaToken {
     pub fn propose_admin(env: Env, caller: Address, new_admin: Address, nonce: u64) {
         roles::require_admin_or_role(&env, &caller, &Symbol::new(&env, roles::ROLE_GOVERNANCE));
         admin::consume_nonce(&env, nonce);
+        if admin::read_pending_admin(&env).is_some() {
+            events::emit_pending_admin_cleared(&env);
+        }
         admin::write_pending_admin(&env, &new_admin);
         events::emit_admin_proposed(&env, new_admin, nonce);
     }
@@ -886,6 +891,9 @@ impl RwaToken {
         recipients: &Vec<RecipientEntry>,
     ) -> TransferPlan {
         let len = recipients.len();
+        if len == 0 {
+            panic_with_error!(env, RwaError::EmptyBatch);
+        }
         if len > 10 {
             panic_with_error!(env, RwaError::BatchTooLarge);
         }
