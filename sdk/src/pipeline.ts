@@ -256,6 +256,8 @@ export interface PipelineOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+const MAX_BACKOFF_MS = 8_000;
+
 const PIPELINE_DEFAULTS = {
   maxRetries: 3,
   initialBackoffMs: 400,
@@ -382,7 +384,7 @@ export class TxPipeline {
         }
 
         await this.sleepMs(backoff);
-        backoff = Math.min(backoff * 2, 8_000);
+        backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
         attempt++;
       }
     }
