@@ -30,8 +30,9 @@ MIN_BYTES=4096       # 4 KB
 # Maximum size: keep parity with the CI size-check threshold.
 MAX_BYTES=131072     # 128 KB
 
-# The five artifacts that must be present and valid before deployment proceeds.
+# The six artifacts that must be present and valid before deployment proceeds.
 REQUIRED_ARTIFACTS=(
+  "rwa_token"
   "kyc_registry"
   "compliance_engine"
   "invoice_token"
