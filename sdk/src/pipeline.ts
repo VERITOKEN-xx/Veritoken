@@ -153,6 +153,32 @@ export function isTransientError(err: unknown): boolean {
   return TRANSIENT_PATTERNS.some((p) => p.test(msg));
 }
 
+// ── Call-context error wrapping ───────────────────────────────────────────────
+
+/**
+ * Wrap a raw (non-typed) pipeline error so its message names the failing
+ * contract call. In a batch / multi-transaction flow the caller otherwise has
+ * no way to tell which call threw without parsing the whole error.
+ *
+ * Typed `TxError` subclasses pass through untouched — they already carry their
+ * own context. The original error is preserved on `.cause` so callers can still
+ * inspect the underlying transport failure.
+ */
+export function wrapCallError(
+  err: unknown,
+  method: string,
+  contractId: string,
+  phase: "simulation" | "submission",
+): unknown {
+  if (err instanceof TxError) return err;
+  const original = err instanceof Error ? err : new Error(String(err));
+  const wrapped = new Error(
+    `Contract call ${method} on ${contractId} failed during ${phase}: ${original.message}`,
+  ) as Error & { cause?: unknown };
+  wrapped.cause = original;
+  return wrapped;
+}
+
 // ── Sequence cache ────────────────────────────────────────────────────────────
 
 /**
@@ -503,7 +529,10 @@ export class TxPipeline {
     } catch (err) {
       // Transport error — invalidate sequence so next retry fetches fresh.
       this.sequenceCache.invalidate(senderAddress);
-      throw err; // let withRetry decide whether to retry
+      // Name the failing call so batch callers can identify it; withRetry still
+      // decides whether to retry (the wrapped message keeps the original text
+      // that transient-error detection matches on).
+      throw wrapCallError(err, method, contractId, "simulation");
     }
 
     if (rpc.Api.isSimulationError(sim)) {
@@ -536,15 +565,16 @@ export class TxPipeline {
       );
     } catch (err) {
       this.sequenceCache.invalidate(senderAddress);
-      throw err;
+      throw wrapCallError(err, method, contractId, "submission");
     }
 
     if (sendResult.status === "ERROR") {
       // Hard rejection from the network — do NOT invalidate sequence,
-      // the sequence was consumed. Surface as SubmissionError.
+      // the sequence was consumed. Surface as SubmissionError, naming the
+      // call so batch callers can tell which transaction the network refused.
       throw new SubmissionError(
         undefined,
-        JSON.stringify(sendResult.errorResult),
+        `${method} on ${contractId}: ${JSON.stringify(sendResult.errorResult)}`,
       );
     }
 

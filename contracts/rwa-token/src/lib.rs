@@ -86,6 +86,12 @@ pub enum RwaError {
     NotInitialized = 29,
     /// Constructor was called with an unrecognized `asset_type` string.
     InvalidAssetType = 30,
+    /// `propose_admin` was called with the address that is already the admin.
+    AlreadyAdmin = 31,
+    /// `accept_admin` was called while no pending admin is set.
+    NoPendingAdmin = 32,
+    /// A batch transfer was submitted with an empty recipient list.
+    EmptyBatch = 33,
 }
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -272,6 +278,12 @@ impl RwaToken {
     /// Requires the current admin nonce (#349) to prevent accidental replay.
     pub fn propose_admin(env: Env, caller: Address, new_admin: Address, nonce: u64) {
         roles::require_admin_or_role(&env, &caller, &Symbol::new(&env, roles::ROLE_GOVERNANCE));
+        // Proposing the sitting admin as their own successor is a no-op that
+        // still burns a nonce, writes storage, and emits a misleading
+        // `adm_prop` event.  Reject it with a typed error instead.
+        if new_admin == admin::read_admin(&env) {
+            panic_with_error!(env, RwaError::AlreadyAdmin);
+        }
         admin::consume_nonce(&env, nonce);
         if admin::read_pending_admin(&env).is_some() {
             events::emit_pending_admin_cleared(&env);
