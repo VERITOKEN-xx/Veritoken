@@ -42,7 +42,13 @@ export function formatTokenAmount(
       displayWhole = (whole + 1n).toLocaleString("en-US");
       fracDisplay = "0".repeat(maxFractionDigits);
     } else {
-      fracDisplay = roundedNum.toString().padStart(maxFractionDigits, "0");
+      // padStart(0, ...) on a non-empty string returns the string unchanged, so
+      // guard here: when maxFractionDigits is 0 the display should have no
+      // fractional part at all (avoids a "1.0" trailing-digit artefact).
+      fracDisplay =
+        maxFractionDigits > 0
+          ? roundedNum.toString().padStart(maxFractionDigits, "0")
+          : "";
     }
   } else {
     fracDisplay = fracStr.replace(/0+$/, "").slice(0, maxFractionDigits);

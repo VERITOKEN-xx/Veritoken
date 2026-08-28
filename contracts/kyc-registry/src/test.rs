@@ -885,6 +885,17 @@ fn test_get_subjects_by_verifier_pagination() {
     assert_eq!(empty.len(), 0);
 }
 
+// ── Admin self-removal ───────────────────────────────────────────────────────
+
+#[test]
+fn test_remove_admin_self_removal() {
+    let (_env, client, admin) = setup();
+    // The sole admin calling remove_admin on themselves must be rejected: removing
+    // the last admin would leave the contract permanently locked.
+    let res = client.try_remove_admin(&admin, &admin);
+    assert_eq!(res, Err(Ok(Error::from(KycError::EmptyAdminList))));
+}
+
 // ── Verifier log ──────────────────────────────────────────────────────────────
 
 #[test]

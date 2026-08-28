@@ -34,6 +34,10 @@ export function validateForm(
   const results: Record<string, ValidationResult> = {};
   for (const field of schema) {
     const value = values[field.key] ?? "";
+    if (field.required && !field.validate && !value) {
+      results[field.key] = { isValid: false, error: "This field is required" };
+      continue;
+    }
     results[field.key] = field.validate ? field.validate(value) : OK;
   }
   return results;

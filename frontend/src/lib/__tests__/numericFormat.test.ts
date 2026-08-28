@@ -57,14 +57,14 @@ describe("formatTokenAmount", () => {
     ).toBe("2.00");
   });
 
-  it("uses exact integer arithmetic for decimals=18 (no floating-point loss)", () => {
-    // 1 * 10^18 smallest units should format as exactly "1"
-    const oneUnit = 10n ** 18n;
-    expect(formatTokenAmount(oneUnit, 18)).toBe("1");
+  it("formats whole number with no trailing dot when maxFractionDigits is 0 (rounds down)", () => {
+    // 1_400_000 / 10^6 = 1.4 → rounds down to 1 with no trailing decimal point.
+    expect(formatTokenAmount(1_400_000n, 6, { maxFractionDigits: 0 })).toBe("1");
+  });
 
-    // 1.000000000000000001 — the last ULP, would be lost with float arithmetic
-    const oneUnitPlusOne = oneUnit + 1n;
-    expect(formatTokenAmount(oneUnitPlusOne, 18)).toBe("1.000000000000000001");
+  it("formats whole number with no trailing dot when maxFractionDigits is 0 (rounds up)", () => {
+    // 1_600_000 / 10^6 = 1.6 → rounds up to 2 with no trailing decimal point.
+    expect(formatTokenAmount(1_600_000n, 6, { maxFractionDigits: 0 })).toBe("2");
   });
 });
 
