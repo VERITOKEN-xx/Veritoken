@@ -7,9 +7,9 @@ import { useAddressValidation } from "../useAddressValidation";
 // directly without a React render context.
 
 describe("useAmountValidation", () => {
-  it("returns valid for empty string", () => {
+  it("returns invalid for empty string with no error message", () => {
     const result = useAmountValidation("");
-    expect(result.isValid).toBe(true);
+    expect(result.isValid).toBe(false);
     expect(result.error).toBeNull();
   });
 

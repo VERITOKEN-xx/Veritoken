@@ -18,9 +18,9 @@ export function useAmountValidation(
   value: string,
   decimals: number = 7,
 ): AmountValidationResult {
-  // Empty values are considered valid (will be caught by required field validation)
+  // Empty values are invalid (error suppressed to avoid red text before typing)
   if (!value || value.trim() === "") {
-    return { isValid: true, error: null };
+    return { isValid: false, error: null };
   }
 
   // Reject strings with more than one decimal point before parseFloat silently
