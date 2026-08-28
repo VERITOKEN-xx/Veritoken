@@ -65,10 +65,13 @@ export const useNotificationStore = create<NotificationState>((set, _get) => ({
       timestamp: new Date().toISOString(),
       read: false,
     };
-    set((s) => ({
-      notifications: [entry, ...s.notifications].slice(0, 100),
-      unreadCount: s.unreadCount + 1,
-    }));
+    set((s) => {
+      const sliced = [entry, ...s.notifications].slice(0, 100);
+      return {
+        notifications: sliced,
+        unreadCount: sliced.filter((n) => !n.read).length,
+      };
+    });
   },
 
   markRead: (id) => {
