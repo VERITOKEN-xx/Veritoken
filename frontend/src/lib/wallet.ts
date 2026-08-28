@@ -106,7 +106,7 @@ interface WalletStore extends WalletState {
 
 export const useWallet = create<WalletStore>((set, get) => ({
   address: null,
-  network: "TESTNET",
+  network: ((import.meta.env.VITE_STELLAR_NETWORK as string) ?? "TESTNET").toUpperCase() as "TESTNET" | "MAINNET",
   connected: false,
   provider: null,
   providerType: null,
@@ -134,7 +134,7 @@ export const useWallet = create<WalletStore>((set, get) => ({
         type === "freighter"
           ? "Freighter extension is not installed."
           : type === "ledger"
-            ? "Ledger via WebUSB requires Chrome, Edge, or Brave."
+            ? "Ledger via WebUSB requires a browser with WebUSB support (Chrome, Edge, Brave, or Opera)."
             : "WalletConnect is not supported in this environment.",
       );
     }
