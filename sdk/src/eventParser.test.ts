@@ -142,6 +142,27 @@ describe("parseEvent — unknown events", () => {
     expect(e.name).toBe("some_future_event");
     expect(e.data).toBe("payload");
   });
+
+  it("returns a typed, non-null result for an unrecognised topic (#645)", () => {
+    const e = parseEvent(rawEvent(["unknown_topic"], nativeToScVal(42, { type: "u32" })));
+    // Must never be null/undefined for a non-empty topics array.
+    expect(e).not.toBeNull();
+    expect(e!.known).toBe(false);
+    expect(e!.name).toBe("unknown_topic");
+    // Raw data is preserved for the caller to interpret.
+    expect(e!.data).toBe(42);
+  });
+});
+
+describe("parseEvent — empty topics", () => {
+  it("returns null for an event with an empty topics array (#623)", () => {
+    const result = parseEvent(rawEvent([], undefined));
+    expect(result).toBeNull();
+  });
+
+  it("does not throw on an empty topics array (#623)", () => {
+    expect(() => parseEvent(rawEvent([], undefined))).not.toThrow();
+  });
 });
 
 describe("asTuple — error path", () => {
