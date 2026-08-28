@@ -509,6 +509,46 @@ fn test_propose_overwrites_previous_pending_proposal() {
     assert_eq!(ce.get_rules().max_transfer_amount, 200);
 }
 
+// ── Activation boundary ───────────────────────────────────────────────────────
+
+#[test]
+fn test_activate_rules_at_boundary() {
+    // delay = 0 → activate_at == proposal timestamp; activation at exactly
+    // that moment (no time advance) must succeed.
+    let (env, ce, _) = setup();
+    env.ledger().set_timestamp(500);
+    ce.propose_rules(
+        &rules(100, 0, 0, false),
+        &String::from_str(&env, "boundary"),
+    );
+    // current_time (500) == activate_at (500): must be accepted.
+    assert_eq!(ce.try_activate_rules(), Ok(Ok(())));
+    assert_eq!(ce.get_rules().max_transfer_amount, 100);
+}
+
+#[test]
+fn test_activate_rules_one_second_before_boundary_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let kyc_id = env.register(KycRegistry, ());
+    KycRegistryClient::new(&env, &kyc_id).initialize(&admin);
+    let ce_id = env.register(ComplianceEngine, ());
+    let ce = ComplianceEngineClient::new(&env, &ce_id);
+    // 1-second delay: activate_at = timestamp + 1.
+    ce.initialize(&admin, &kyc_id, &1u64);
+    env.ledger().set_timestamp(500);
+    ce.propose_rules(
+        &rules(100, 0, 0, false),
+        &String::from_str(&env, "one-before"),
+    );
+    // current_time (500) < activate_at (501): must be rejected.
+    assert_eq!(
+        ce.try_activate_rules(),
+        Err(Ok(Error::from(ComplianceError::TooEarlyToActivate)))
+    );
+}
+
 // ── evaluate_transfer / KYC integration (preserved + extended) ────────────────
 
 #[test]

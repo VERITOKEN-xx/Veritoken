@@ -45,6 +45,12 @@ describe("useAmountValidation", () => {
     expect(result.error).toMatch(/decimal places/i);
   });
 
+  it("rejects multiple decimal points", () => {
+    const result = useAmountValidation("1.2.3");
+    expect(result.isValid).toBe(false);
+    expect(result.error).not.toBeNull();
+  });
+
   it("rejects amounts that exceed MAX_SAFE_INTEGER in stroops", () => {
     const result = useAmountValidation("999999999999");
     expect(result.isValid).toBe(false);
