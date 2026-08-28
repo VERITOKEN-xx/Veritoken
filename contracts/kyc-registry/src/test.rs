@@ -1754,3 +1754,79 @@ fn test_migrate_v2_batch_size_limits_processing() {
     assert_eq!(s1_count, 1, "s1 should have 1 rebuilt entry");
     assert_eq!(s2_count, 0, "s2 should not have been rebuilt yet");
 }
+
+// ── Batch duplicate subject boundary condition ────────────────────────────────
+
+/// Documents the behavior when the same subject address appears twice in a
+/// single `approve_batch` call.
+///
+/// Current contract behavior (no deduplication guard):
+/// - Both iterations execute in full: two lifecycle entries are recorded,
+///   two `approved` events are emitted, and the record is overwritten by the
+///   second iteration (last-write-wins).
+/// - The final record is valid: status == Approved, with the values from the
+///   second entry in the batch.
+/// - The lifecycle count for the subject is 2 (one entry per iteration).
+///
+/// If the contract is changed to deduplicate or reject duplicates, this test
+/// must be updated to reflect the new invariant.
+#[test]
+fn test_approve_batch_duplicate_subject() {
+    let (env, client, admin) = setup();
+    let verifier = Address::generate(&env);
+    client.add_verifier(&admin, &verifier);
+
+    let addr = Address::generate(&env);
+
+    // Build a two-entry batch where both entries refer to the same address,
+    // but with different tiers so we can distinguish which write "won".
+    let mut subjects = Vec::new(&env);
+    subjects.push_back((addr.clone(), 1u32, 0u64, js(&env, "US")));
+    subjects.push_back((addr.clone(), 2u32, 0u64, js(&env, "DE")));
+
+    // The call must succeed (no error expected for duplicates today).
+    client.approve_batch(&verifier, &subjects);
+
+    // The subject is approved (last-write-wins → tier 2, jurisdiction "DE").
+    assert!(client.is_approved(&addr));
+    let record = client.get_record(&addr);
+    assert!(matches!(record.status, KycStatus::Approved));
+    assert_eq!(record.tier, 2, "second batch entry should overwrite the first");
+    assert_eq!(record.jurisdiction, js(&env, "DE"));
+
+    // Two lifecycle transitions were recorded — one per iteration.
+    assert_eq!(
+        client.get_lifecycle_count(&addr),
+        2,
+        "each iteration appends a transition, even for the same subject"
+    );
+    let hist = client.get_lifecycle_history(&addr, &0, &10);
+    assert_eq!(hist.get(0).unwrap().kind, KycTransitionKind::Approve);
+    assert_eq!(hist.get(0).unwrap().tier, 1);
+    assert_eq!(hist.get(1).unwrap().kind, KycTransitionKind::Approve);
+    assert_eq!(hist.get(1).unwrap().tier, 2);
+
+    // Two `approved` events were emitted — one per iteration.
+    use soroban_sdk::{symbol_short, testutils::Events as _};
+    let approved_topic = symbol_short!("approved");
+    let approval_events: usize = env
+        .events()
+        .all()
+        .iter()
+        .filter(|(_, topics, _)| {
+            topics
+                .get(0)
+                .map(|t| {
+                    use soroban_sdk::{Symbol, TryFromVal};
+                    Symbol::try_from_val(&env, &t)
+                        .map(|s| s == approved_topic)
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        })
+        .count();
+    assert_eq!(
+        approval_events, 2,
+        "each iteration emits one approved event"
+    );
+}

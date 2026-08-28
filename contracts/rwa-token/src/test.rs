@@ -2548,3 +2548,102 @@ fn test_propose_admin_second_call_emits_pending_admin_cleared() {
         .propose_admin(&h.admin, &Address::generate(&h.env), &h.next_nonce());
     assert_eq!(count_clear_events(&h), 1);
 }
+
+// ── Allowance past-expiry boundary condition ──────────────────────────────────
+
+/// Documents and pins the behavior when `approve` is called with an
+/// `expiration_ledger` that is already in the past (strictly less than the
+/// current ledger sequence).
+///
+/// `write_allowance` panics with `AllowanceExpired` when `amount > 0` and
+/// `expiration_ledger < current_sequence`.  This test therefore verifies that
+/// the `approve` call itself fails — no allowance entry is written — and a
+/// subsequent `transfer_from` also fails.
+#[test]
+fn test_set_allowance_past_expiry() {
+    use crate::RwaError;
+    use soroban_sdk::Error;
+
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    let spender = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+    h.mint(&alice, 1_000);
+
+    // Advance the ledger so we have a non-zero sequence to subtract from.
+    h.env.ledger().with_mut(|l| {
+        l.sequence_number = 100;
+    });
+    let current_seq = h.env.ledger().sequence();
+
+    // expiry_ledger is strictly in the past.
+    let past_expiry = current_seq - 1;
+
+    // The approve call itself must fail with AllowanceExpired.
+    let res = h
+        .token
+        .try_approve(&alice, &spender, &300, &past_expiry);
+    assert_eq!(
+        res.unwrap_err().unwrap(),
+        Error::from(RwaError::AllowanceExpired),
+        "approve with past expiry_ledger must be rejected with AllowanceExpired"
+    );
+
+    // No allowance was written: the stored amount must be zero.
+    assert_eq!(
+        h.token.allowance(&alice, &spender),
+        0,
+        "no allowance should be stored after a rejected approve"
+    );
+
+    // A subsequent transfer_from must also fail (no usable allowance).
+    let transfer_res = h
+        .token
+        .try_transfer_from(&spender, &alice, &bob, &1);
+    assert!(
+        transfer_res.is_err(),
+        "transfer_from must fail when no allowance was written"
+    );
+
+    // Alice's balance is untouched.
+    assert_eq!(h.token.balance(&alice), 1_000);
+}
+
+// ── Burn entire supply boundary condition ─────────────────────────────────────
+
+/// Documents that burning the exact total supply in one call drives both the
+/// holder's balance and `total_supply()` to zero with no off-by-one errors.
+#[test]
+fn test_burn_entire_supply() {
+    let h = setup();
+    let holder = Address::generate(&h.env);
+    h.approve_kyc(&holder);
+    h.mint(&holder, 1_000);
+
+    assert_eq!(h.token.total_supply(), 1_000);
+    assert_eq!(h.token.balance(&holder), 1_000);
+    // Holder is registered in the compliance engine.
+    assert_eq!(h.compliance.holder_count(), 1);
+
+    // Burn the exact total supply.
+    h.token.burn(&holder, &1_000);
+
+    assert_eq!(
+        h.token.total_supply(),
+        0,
+        "total_supply must be 0 after burning the full supply"
+    );
+    assert_eq!(
+        h.token.balance(&holder),
+        0,
+        "holder balance must be 0 after burning their entire balance"
+    );
+    // The holder should be deregistered once their balance reaches zero.
+    assert_eq!(
+        h.compliance.holder_count(),
+        0,
+        "holder must be deregistered after balance is drained to zero"
+    );
+}
