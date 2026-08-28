@@ -37,6 +37,9 @@ import type { RawSorobanEvent } from "./eventParser.js";
 // Maximum events to fetch per RPC call. Bounded by RPC response size; 200 is the observed safe limit.
 const POLL_LIMIT = 200;
 
+// ~8 min of history at 5 s/ledger
+const STARTUP_BACKFILL_LEDGERS = 100;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function toRaw(event: rpc.Api.EventResponse): RawSorobanEvent {
@@ -132,7 +135,7 @@ export class ContractPoller {
       // First run — start from the latest ledger (no historical back-fill).
       try {
         const latest = await this.server.getLatestLedger();
-        request.startLedger = Math.max(0, latest.sequence - 100);
+        request.startLedger = Math.max(0, latest.sequence - STARTUP_BACKFILL_LEDGERS);
       } catch {
         request.startLedger = 0;
       }

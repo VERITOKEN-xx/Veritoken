@@ -28,6 +28,7 @@ WASM_DIR="${WASM_DIR:-target/wasm32v1-none/release}"
 MIN_BYTES=4096       # 4 KB
 
 # Maximum size: keep parity with the CI size-check threshold.
+# Must match THRESHOLD_BYTES in .github/workflows/ci.yml
 MAX_BYTES=131072     # 128 KB
 
 # The six artifacts that must be present and valid before deployment proceeds.
