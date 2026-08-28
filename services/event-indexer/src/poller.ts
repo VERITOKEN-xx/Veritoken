@@ -34,6 +34,7 @@ import type {
 } from "./types.js";
 import type { RawSorobanEvent } from "./eventParser.js";
 
+// Maximum events to fetch per RPC call. Bounded by RPC response size; 200 is the observed safe limit.
 const POLL_LIMIT = 200;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

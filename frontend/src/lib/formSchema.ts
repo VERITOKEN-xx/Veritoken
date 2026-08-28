@@ -45,6 +45,7 @@ export function validateForm(
 
 /** True only if every field in a `validateForm` result is valid. */
 export function isFormValid(results: Record<string, ValidationResult>): boolean {
+  if (Object.keys(results).length === 0) return false;
   return Object.values(results).every((r) => r.isValid);
 }
 
