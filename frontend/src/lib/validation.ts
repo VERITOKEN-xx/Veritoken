@@ -23,6 +23,12 @@ export function useAmountValidation(
     return { isValid: true, error: null };
   }
 
+  // Reject strings with more than one decimal point before parseFloat silently
+  // drops the second one (e.g. "1.2.3" → parseFloat gives 1.2, masking bad input).
+  if ((value.match(/\./g) ?? []).length > 1) {
+    return { isValid: false, error: "Amount must be a valid number" };
+  }
+
   // Try to parse as number
   const num = parseFloat(value);
   if (isNaN(num)) {

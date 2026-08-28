@@ -56,6 +56,16 @@ describe("formatTokenAmount", () => {
       formatTokenAmount(1_999_999n, 6, { maxFractionDigits: 2 }),
     ).toBe("2.00");
   });
+
+  it("formats whole number with no trailing dot when maxFractionDigits is 0 (rounds down)", () => {
+    // 1_400_000 / 10^6 = 1.4 → rounds down to 1 with no trailing decimal point.
+    expect(formatTokenAmount(1_400_000n, 6, { maxFractionDigits: 0 })).toBe("1");
+  });
+
+  it("formats whole number with no trailing dot when maxFractionDigits is 0 (rounds up)", () => {
+    // 1_600_000 / 10^6 = 1.6 → rounds up to 2 with no trailing decimal point.
+    expect(formatTokenAmount(1_600_000n, 6, { maxFractionDigits: 0 })).toBe("2");
+  });
 });
 
 describe("formatStroops", () => {
