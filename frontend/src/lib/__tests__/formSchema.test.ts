@@ -39,4 +39,8 @@ describe("validateForm / isFormValid", () => {
     const results = validateForm(SCHEMA, {});
     expect(results.name.isValid).toBe(false);
   });
+
+  it("returns false for an empty results object (no fields validated)", () => {
+    expect(isFormValid({})).toBe(false);
+  });
 });

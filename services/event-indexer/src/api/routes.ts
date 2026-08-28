@@ -84,7 +84,11 @@ export function buildRouter(
         // no DB timestamp is available. We just report the poll interval as
         // upper-bound lag.
         const lastLedger = poller.getLastProcessedLedger();
-        if (lastLedger === 0) maxLagSeconds = Math.max(maxLagSeconds, 60);
+        if (lastLedger === 0) {
+          maxLagSeconds = Math.max(maxLagSeconds, 60);
+        } else {
+          maxLagSeconds = Math.max(maxLagSeconds, 30);
+        }
       }
 
       res.json({

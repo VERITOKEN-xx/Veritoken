@@ -53,6 +53,9 @@ export function loadConfig(): IndexerConfig {
   }
 
   const pollIntervalMs = parseInt(process.env.POLL_INTERVAL_MS ?? "5000", 10);
+  if (isNaN(pollIntervalMs) || pollIntervalMs <= 0) {
+    throw new Error("POLL_INTERVAL_MS must be a positive integer");
+  }
   const port           = parseInt(process.env.PORT ?? "3001", 10);
   const contracts      = parseContracts(process.env.CONTRACT_IDS ?? "");
 
