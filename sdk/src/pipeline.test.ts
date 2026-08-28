@@ -160,6 +160,18 @@ describe("SequenceCache", () => {
       new SequenceCache().next(srv as unknown as rpc.Server, ALICE),
     ).rejects.toBeInstanceOf(SequenceError);
   });
+  it("evicts the oldest entry once the 1000-account cap is exceeded", async () => {
+    const srv = makeSrv({ sequence: "1" });
+    const c = new SequenceCache();
+    const accounts = Array.from({ length: 1001 }, (_, i) => `account_${i}`);
+    for (const a of accounts) await c.next(srv, a);
+
+    const present = accounts.filter((a) => c.peek(a) !== undefined);
+    expect(present.length).toBe(1000);
+    // The first-inserted account is the one evicted; the newest survives.
+    expect(c.peek("account_0")).toBeUndefined();
+    expect(c.peek("account_1000")).toBe("1");
+  });
 });
 
 describe("TxPipeline.buildTx", () => {

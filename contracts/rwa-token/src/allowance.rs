@@ -16,11 +16,17 @@ pub fn read_allowance(env: &Env, from: Address, spender: Address) -> AllowanceVa
         .get::<DataKey, AllowanceValue>(&key)
     {
         if allowance.expiration_ledger <= env.ledger().sequence() {
+            // Expired: about to be discarded — do not spend rent extending its TTL.
             AllowanceValue {
                 amount: 0,
                 expiration_ledger: allowance.expiration_ledger,
             }
         } else {
+            // Still valid: keep the entry alive until its declared expiry.
+            let live_for = allowance.expiration_ledger - env.ledger().sequence();
+            env.storage()
+                .temporary()
+                .extend_ttl(&key, live_for, live_for);
             allowance
         }
     } else {

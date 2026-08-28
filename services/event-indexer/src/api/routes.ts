@@ -18,13 +18,14 @@ import {
   queryPendingExpiry,
   getAllCursors,
 } from "../db/queries.js";
-import type { ContractPoller } from "../poller.js";
+import { POLL_LIMIT, type ContractPoller } from "../poller.js";
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
 const PaginationSchema = z.object({
   page:     z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+  // Share the poller's per-call limit so the two stay in lock-step.
+  pageSize: z.coerce.number().int().min(1).max(POLL_LIMIT).default(50),
 });
 
 const EventsQuerySchema = PaginationSchema.extend({
