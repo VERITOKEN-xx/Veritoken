@@ -194,9 +194,19 @@ function contractIdToString(contractId: unknown): string | undefined {
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-/** Decode a single raw RPC event into a typed `ParsedEvent`. */
-export function parseEvent(event: rpc.Api.EventResponse): ParsedEvent {
+/**
+ * Decode a single raw RPC event into a typed `ParsedEvent`.
+ *
+ * Returns `null` only when the event's `topics` array is empty, i.e. there is
+ * no contract event-name selector to dispatch on (#623). This lets callers
+ * distinguish a genuinely empty/malformed event (`null`) from an unrecognised
+ * but otherwise valid event (a non-null `UnknownParsedEvent`). An unrecognised
+ * topic name never yields `null` or `undefined` — it always returns a typed,
+ * non-null `UnknownParsedEvent` (#645).
+ */
+export function parseEvent(event: rpc.Api.EventResponse): ParsedEvent | null {
   const decodedTopics = event.topic.map((t) => scValToNative(t));
+  if (decodedTopics.length === 0) return null;
   const [name, ...rest] = decodedTopics as [string, ...unknown[]];
   const data = scValToNative(event.value);
   const decoder = DECODERS[name];
@@ -220,7 +230,7 @@ export function parseEvent(event: rpc.Api.EventResponse): ParsedEvent {
 
 /** Decode a batch of raw RPC events (e.g. `getEvents(...).events`). */
 export function parseEvents(events: rpc.Api.EventResponse[]): ParsedEvent[] {
-  return events.map(parseEvent);
+  return events.map(parseEvent).filter((e): e is ParsedEvent => e !== null);
 }
 
 /** Narrow a list of parsed events down to a single known event name. */
