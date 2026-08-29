@@ -97,6 +97,10 @@ export function parseTokenAmount(input: string, decimals = 7): ParseResult {
     return { ok: false, error: "Amount is required" };
   }
 
+  if (cleaned.startsWith("-")) {
+    return { ok: false, error: "Amount must be non-negative" };
+  }
+
   if (!/^\d+(\.\d+)?$/.test(cleaned)) {
     return { ok: false, error: "Amount must be a positive number" };
   }
