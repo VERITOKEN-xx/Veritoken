@@ -132,10 +132,16 @@ describe("validateVintageYear", () => {
     expect(validateVintageYear("").isValid).toBe(true);
   });
 
-  it("accepts years within the valid range", () => {
+  it("accepts the minimum vintage year 1990", () => {
     expect(validateVintageYear("1990").isValid).toBe(true);
-    expect(validateVintageYear("2024").isValid).toBe(true);
+  });
+
+  it("accepts the maximum vintage year 2050", () => {
     expect(validateVintageYear("2050").isValid).toBe(true);
+  });
+
+  it("accepts years within the valid range", () => {
+    expect(validateVintageYear("2024").isValid).toBe(true);
   });
 
   it("rejects a year before 1990", () => {

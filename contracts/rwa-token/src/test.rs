@@ -2581,6 +2581,34 @@ fn test_propose_admin_accepts_different_address() {
     assert_eq!(h.token.balance(&investor), 100);
 }
 
+#[test]
+fn test_accept_admin_event_includes_admin_nonce() {
+    use soroban_sdk::{testutils::Events as _, symbol_short, Address, TryFromVal};
+
+    let h = setup();
+    let new_admin = Address::generate(&h.env);
+    h.token
+        .propose_admin(&h.admin, &new_admin, &h.next_nonce());
+    h.token.accept_admin();
+
+    let (_, topics, data) = h
+        .env
+        .events()
+        .all()
+        .iter()
+        .rev()
+        .find(|(_, topics, _)| {
+            topics.len() == 1
+                && TryFromVal::try_from_val(&h.env, &topics.get(0).unwrap())
+                    .map(|topic: soroban_sdk::Symbol| topic == symbol_short!("adm_set"))
+                    .unwrap_or(false)
+        })
+        .expect("admin-set event should be emitted");
+    assert_eq!(topics.len(), 1);
+    let (_, _, nonce): (Address, Address, u64) = TryFromVal::try_from_val(&h.env, &data).unwrap();
+    assert_eq!(nonce, 1);
+}
+
 // ── Allowance past-expiry boundary condition ──────────────────────────────────
 
 /// Documents and pins the behavior when `approve` is called with an
