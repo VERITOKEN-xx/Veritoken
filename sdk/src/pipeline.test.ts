@@ -137,6 +137,11 @@ describe("SequenceCache", () => {
     expect(await c.next(srv, ALICE)).toBe("11");
     expect(srv.getAccount).toHaveBeenCalledOnce();
   });
+  it("advance() is a no-op when the account is absent", () => {
+    const c = new SequenceCache();
+    expect(() => c.advance(ALICE)).not.toThrow();
+    expect(c.peek(ALICE)).toBeUndefined();
+  });
   it("invalidate() forces re-fetch", async () => {
     const srv = makeSrv({ sequence: "10" });
     const c = new SequenceCache();

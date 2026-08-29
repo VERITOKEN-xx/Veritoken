@@ -90,6 +90,8 @@ pub enum RwaError {
     EmptyBatch = 31,
     /// accept_admin was called when no pending admin transfer is in progress.
     NoPendingAdmin = 32,
+    /// propose_admin was called with the current admin as successor.
+    AlreadyAdmin = 33,
 }
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -267,7 +269,7 @@ impl RwaToken {
         let old_admin = admin::read_admin(&env);
         old_admin.require_auth();
         admin::write_admin(&env, &new_admin);
-        events::emit_admin_set(&env, old_admin, new_admin);
+        events::emit_admin_set(&env, old_admin, new_admin, admin::read_admin_nonce(&env));
     }
 
     /// Step 1 of the two-step admin handover.
@@ -298,7 +300,7 @@ impl RwaToken {
         let old_admin = admin::read_admin(&env);
         admin::write_admin(&env, &pending);
         admin::remove_pending_admin(&env);
-        events::emit_admin_set(&env, old_admin, pending);
+        events::emit_admin_set(&env, old_admin, pending, admin::read_admin_nonce(&env));
     }
 
     /// Updates the KYC registry address.
