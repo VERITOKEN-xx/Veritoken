@@ -158,6 +158,11 @@ describe("parseContractError", () => {
     expect(parseContractError("kyc", "Timeout")).toBeNull();
   });
 
+  it("returns null for a string with no error code (#622)", () => {
+    expect(parseContractError("rwa", "InvokeHostFunctionFailed")).toBeNull();
+    expect(parseContractError("carbon", "Transaction failed")).toBeNull();
+  });
+
   it("returns null when the error code is not recognised", () => {
     expect(parseContractError("rwa", "Error(Contract, #9999)")).toBeNull();
   });
