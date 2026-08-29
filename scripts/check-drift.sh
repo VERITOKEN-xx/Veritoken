@@ -74,6 +74,11 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
+# The set of contracts checked below (rwa_token, kyc_registry, compliance_engine,
+# invoice_token, property_token, carbon_credit_token) must stay in sync with
+# REQUIRED_ARTIFACTS in scripts/verify-artifacts.sh. If a contract crate is
+# renamed there, update the VITE_* keys and manifest keys here to match —
+# otherwise the drift check silently stops covering the renamed contract.
 ENV_NETWORK="${VITE_STELLAR_NETWORK:-}"
 ENV_KYC="${VITE_KYC_REGISTRY_ID:-}"
 ENV_CE="${VITE_COMPLIANCE_ENGINE_ID:-}"

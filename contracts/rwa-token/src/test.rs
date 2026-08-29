@@ -2549,6 +2549,38 @@ fn test_propose_admin_second_call_emits_pending_admin_cleared() {
     assert_eq!(count_clear_events(&h), 1);
 }
 
+#[test]
+fn test_propose_admin_rejects_current_admin() {
+    use crate::RwaError;
+    use soroban_sdk::Error;
+
+    let h = setup();
+    // Proposing the sitting admin as their own successor is rejected with a
+    // typed error rather than silently succeeding.
+    let res = h
+        .token
+        .try_propose_admin(&h.admin, &h.admin, &h.next_nonce());
+    assert_eq!(res.unwrap_err().unwrap(), Error::from(RwaError::AlreadyAdmin));
+
+    // The rejected call must not have consumed the admin nonce.
+    assert_eq!(h.token.admin_nonce(), 0);
+}
+
+#[test]
+fn test_propose_admin_accepts_different_address() {
+    let h = setup();
+    let new_admin = Address::generate(&h.env);
+
+    // A distinct address still completes the two-step handover as before.
+    h.token.propose_admin(&h.admin, &new_admin, &h.next_nonce());
+    h.token.accept_admin();
+
+    let investor = Address::generate(&h.env);
+    h.approve_kyc(&investor);
+    h.token.mint(&new_admin, &investor, &100);
+    assert_eq!(h.token.balance(&investor), 100);
+}
+
 // ── Allowance past-expiry boundary condition ──────────────────────────────────
 
 /// Documents and pins the behavior when `approve` is called with an

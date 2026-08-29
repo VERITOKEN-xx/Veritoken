@@ -15,7 +15,7 @@ import {
   TxPipeline, SequenceCache,
   SequenceError, SimulationError, SigningError,
   SubmissionError, ConfirmError, TimeoutError, TransientError,
-  isTransientError,
+  isTransientError, wrapCallError,
   type PipelineOptions,
 } from "./pipeline.js";
 import { encodeAddress, encodeI128 } from "./codec.js";
@@ -325,5 +325,34 @@ describe("TxPipeline.write — error handling", () => {
   it("throws SequenceError when getAccount fails", async () => {
     const srv = { getAccount: vi.fn().mockRejectedValue(new Error("not found")) };
     await expect(makePipeline(srv).write(CONTRACT_ID, "t", [], ALICE, sign)).rejects.toBeInstanceOf(SequenceError);
+  });
+});
+
+describe("TxPipeline.write — failing-call identification (#642)", () => {
+  it("wraps a non-transient simulation transport error with the method and contract id", async () => {
+    const srv = makeSrv();
+    srv.simulateTransaction = vi.fn().mockRejectedValue(new Error("boom unexpected"));
+    const err = await makePipeline(srv)
+      .write(CONTRACT_ID, "transfer", [], ALICE, sign)
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain("transfer");
+    expect(err.message).toContain(CONTRACT_ID);
+    expect(err.message).toContain("boom unexpected");
+    expect((err as { cause?: Error }).cause).toBeInstanceOf(Error);
+    expect((err as { cause?: Error }).cause?.message).toBe("boom unexpected");
+  });
+
+  it("names the method in the SubmissionError when the network rejects the send", async () => {
+    const err = await makePipeline(makeSrv({ sendStatus: "ERROR" }))
+      .write(CONTRACT_ID, "mint", [], ALICE, sign)
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(SubmissionError);
+    expect(err.message).toContain("mint");
+  });
+
+  it("leaves typed TxError subclasses unwrapped", () => {
+    const original = new SimulationError("foo", "bad");
+    expect(wrapCallError(original, "foo", CONTRACT_ID, "simulation")).toBe(original);
   });
 });
