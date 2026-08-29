@@ -41,7 +41,7 @@ export function useRateLimitedAction<Args extends unknown[]>(
       setRemainingMs(Math.max(0, readyAtRef.current - Date.now()));
     }, 200);
     return () => clearInterval(interval);
-  }, [remainingMs > 0]);
+  }, [remainingMs]);
 
   const run = useCallback(
     (...args: Args) => {

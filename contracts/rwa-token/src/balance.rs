@@ -60,6 +60,8 @@ pub fn write_total_supply(env: &Env, supply: i128) {
     env.storage().instance().set(&DataKey::TotalSupply, &supply);
 }
 
+// Returns 0 when supply is unlimited or the key is absent;
+// callers use is_supply_capped to distinguish between the two cases.
 pub fn read_max_supply(env: &Env) -> i128 {
     env.storage()
         .instance()
@@ -68,6 +70,10 @@ pub fn read_max_supply(env: &Env) -> i128 {
         .instance()
         .get(&DataKey::MaxSupply)
         .unwrap_or(0)
+}
+
+pub fn is_supply_capped(env: &Env) -> bool {
+    read_max_supply(env) > 0
 }
 
 pub fn write_max_supply(env: &Env, cap: i128) {
