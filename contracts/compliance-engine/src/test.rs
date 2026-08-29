@@ -141,6 +141,29 @@ fn test_set_rules_rejects_min_holding_exceeds_365_days() {
 }
 
 #[test]
+fn test_propose_rules_max_holding_period() {
+    let (env, ce, _) = setup();
+    ce.propose_rules(
+        &rules(0, 365 * 86_400, 0, false),
+        &String::from_str(&env, "365-day holding period"),
+    );
+}
+
+#[test]
+fn test_propose_rules_rejects_holding_period_over_365_days() {
+    let (env, ce, _) = setup();
+    assert_eq!(
+        ce.try_propose_rules(
+            &rules(0, 366 * 86_400, 0, false),
+            &String::from_str(&env, "366-day holding period"),
+        ),
+        Err(Ok(Error::from(
+            ComplianceError::MinHoldingPeriodExceeds365Days
+        )))
+    );
+}
+
+#[test]
 fn test_set_rules_rejects_negative_max_transfer() {
     let (_, ce, _) = setup();
     assert_eq!(

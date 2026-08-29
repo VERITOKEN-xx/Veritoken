@@ -71,4 +71,22 @@ describe("useRateLimitedAction", () => {
 
     expect(action).toHaveBeenCalledTimes(1);
   });
+
+  it("aborts an in-flight action when the hook unmounts", () => {
+    let receivedSignal: AbortSignal | undefined;
+    const action = (signal: AbortSignal) => {
+      receivedSignal = signal;
+      return new Promise<void>(() => {});
+    };
+    const { result, unmount } = renderHook(() =>
+      useRateLimitedAction(action as (...args: never[]) => unknown, { cooldownMs: 3000 }),
+    );
+
+    act(() => result.current.run());
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+    expect(receivedSignal?.aborted).toBe(false);
+
+    unmount();
+    expect(receivedSignal?.aborted).toBe(true);
+  });
 });

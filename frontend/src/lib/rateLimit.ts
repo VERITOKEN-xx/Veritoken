@@ -33,7 +33,13 @@ export function useRateLimitedAction<Args extends unknown[]>(
   onSuppressedRef.current = opts.onSuppressed;
 
   const readyAtRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
   const [remainingMs, setRemainingMs] = useState(0);
+
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (remainingMs <= 0) return;
@@ -52,7 +58,24 @@ export function useRateLimitedAction<Args extends unknown[]>(
       }
       readyAtRef.current = now + cooldownMs;
       setRemainingMs(cooldownMs);
-      actionRef.current(...args);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      // Preserve existing actions while passing a signal to callbacks that
+      // explicitly declare an additional argument.
+      const callback = actionRef.current as (...values: unknown[]) => unknown;
+      const result = callback.length > args.length
+        ? callback(...args, controller.signal)
+        : callback(...args);
+      if (result && typeof (result as Promise<unknown>).then === "function") {
+        void Promise.resolve(result).then(
+          () => {
+            if (abortRef.current === controller) abortRef.current = null;
+          },
+          () => {
+            if (abortRef.current === controller) abortRef.current = null;
+          },
+        );
+      }
     },
     [cooldownMs],
   );
