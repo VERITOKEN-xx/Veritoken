@@ -173,6 +173,17 @@ describe("validateCurrency", () => {
     expect(validateCurrency("GBP").isValid).toBe(true);
   });
 
+  it("accepts the special metal code XAU", () => {
+    expect(validateCurrency("XAU").isValid).toBe(true);
+  });
+
+  it("rejects well-formed but unrecognised codes", () => {
+    const r = validateCurrency("XYZ");
+    expect(r.isValid).toBe(false);
+    expect(r.error).toMatch(/ISO 4217/i);
+    expect(validateCurrency("AAA").isValid).toBe(false);
+  });
+
   it("rejects lowercase codes", () => {
     const r = validateCurrency("usd");
     expect(r.isValid).toBe(false);

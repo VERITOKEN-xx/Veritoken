@@ -35,7 +35,9 @@ import type {
 import type { RawSorobanEvent } from "./eventParser.js";
 
 // Maximum events to fetch per RPC call. Bounded by RPC response size; 200 is the observed safe limit.
-const POLL_LIMIT = 200;
+// Exported so the REST API (routes.ts) can cap its pageSize at the same value
+// instead of duplicating the literal.
+export const POLL_LIMIT = 200;
 
 // ~8 min of history at 5 s/ledger
 const STARTUP_BACKFILL_LEDGERS = 100;

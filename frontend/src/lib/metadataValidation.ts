@@ -8,6 +8,24 @@ export interface ValidationResult {
 const OK: ValidationResult = { isValid: true, error: null };
 const fail = (error: string): ValidationResult => ({ isValid: false, error });
 
+/**
+ * Allowlist of ISO 4217 currency codes supported by the platform, plus the
+ * special metal code XAU (gold). A bare 3-letter format check would otherwise
+ * wave through nonsense codes like "XYZ" or "AAA".
+ */
+const ALLOWED_CURRENCIES = new Set([
+  "USD",
+  "EUR",
+  "GBP",
+  "CHF",
+  "SGD",
+  "JPY",
+  "AUD",
+  "CAD",
+  "HKD",
+  "XAU",
+]);
+
 // ── Address / identity validators (moved from DeployPage.tsx, issue #426 /
 // generalised for issue #447's contract-driven form schemas) ────────────────
 
@@ -128,11 +146,13 @@ export function validateVintageYear(value: string): ValidationResult {
   return OK;
 }
 
-/** ISO 4217 currency code: exactly 3 uppercase letters. */
+/** ISO 4217 currency code: 3 uppercase letters, restricted to the platform allowlist. */
 export function validateCurrency(value: string): ValidationResult {
   if (!value) return OK;
   if (!/^[A-Z]{3}$/.test(value))
     return fail("Currency must be a 3-letter uppercase code (e.g. USD, EUR)");
+  if (!ALLOWED_CURRENCIES.has(value))
+    return fail("Currency must be a recognised ISO 4217 code");
   return OK;
 }
 

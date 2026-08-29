@@ -182,6 +182,14 @@ export function wrapCallError(
 // ── Sequence cache ────────────────────────────────────────────────────────────
 
 /**
+ * Upper bound on the number of distinct accounts held in the sequence cache.
+ * A long-running service that submits transactions for many accounts would
+ * otherwise grow this Map without bound. When the limit is exceeded the
+ * oldest-inserted entry is evicted (Map preserves insertion order).
+ */
+const MAX_SEQUENCE_CACHE_ENTRIES = 1_000;
+
+/**
  * SequenceCache keeps the last-known sequence per account in memory.
  *
  * Rules:
@@ -190,6 +198,8 @@ export function wrapCallError(
  *   next call in the same process doesn't race with ledger propagation.
  * - On a SequenceError or submission rejection the entry is invalidated
  *   so the next attempt fetches a fresh value from RPC.
+ * - The cache holds at most MAX_SEQUENCE_CACHE_ENTRIES accounts; once full,
+ *   inserting a new account evicts the oldest one.
  */
 export class SequenceCache {
   private readonly cache = new Map<string, bigint>();
@@ -226,8 +236,22 @@ export class SequenceCache {
       const account = await server.getAccount(address);
       const raw = (account as unknown as { sequence: string }).sequence;
       this.cache.set(address, BigInt(raw));
+      this.evictOldest();
     } catch (err) {
       throw new SequenceError(address, err);
+    }
+  }
+
+  /**
+   * Evict the oldest-inserted entry while the cache is over capacity.
+   * Map iteration order is insertion order, so `keys().next().value` is the
+   * least-recently-added account.
+   */
+  private evictOldest(): void {
+    while (this.cache.size > MAX_SEQUENCE_CACHE_ENTRIES) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
     }
   }
 
