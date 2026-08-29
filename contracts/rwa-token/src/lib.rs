@@ -86,6 +86,10 @@ pub enum RwaError {
     NotInitialized = 29,
     /// Constructor was called with an unrecognized `asset_type` string.
     InvalidAssetType = 30,
+    /// batch_transfer was called with an empty recipients vector.
+    EmptyBatch = 31,
+    /// accept_admin was called when no pending admin transfer is in progress.
+    NoPendingAdmin = 32,
 }
 
 // ── Public types ──────────────────────────────────────────────────────────────

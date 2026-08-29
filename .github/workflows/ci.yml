@@ -136,6 +136,7 @@ jobs:
         shell: bash
         run: |
           # ── Configurable threshold ─────────────────────────────────────────
+          # Must match MAX_BYTES in scripts/verify-artifacts.sh
           THRESHOLD_BYTES=131072   # 128 KB
 
           WASM_DIR="target/wasm32v1-none/release"
