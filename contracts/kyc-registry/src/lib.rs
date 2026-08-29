@@ -283,8 +283,8 @@ impl KycRegistry {
             env.storage()
                 .instance()
                 .set(&DataKey::VerifierCount, &(count + 1));
+            env.events().publish((symbol_short!("add_vrf"),), verifier);
         }
-        env.events().publish((symbol_short!("add_vrf"),), verifier);
     }
 
     pub fn remove_verifier(env: Env, caller: Address, verifier: Address) {
