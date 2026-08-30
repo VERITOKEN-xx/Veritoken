@@ -361,6 +361,36 @@ describe("submitWithFeeBump", () => {
       ),
     ).rejects.toThrow(/Fee-bump submission returned ERROR/i);
   });
+
+  it("throws immediately when maxFeeStroops is zero (before any network call)", async () => {
+    const config = makeConfig({ maxFeeStroops: 0 });
+
+    await expect(
+      submitWithFeeBump(
+        "signed-inner-xdr",
+        config,
+        { sendTransaction: mockSendTransaction, getTransaction: mockGetTransaction } as never,
+        async () => {},
+      ),
+    ).rejects.toThrow(/maxFeeStroops must be a positive integer/i);
+    expect(mockSendTransaction).not.toHaveBeenCalled();
+    expect(mockGetTransaction).not.toHaveBeenCalled();
+  });
+
+  it("throws immediately when maxFeeStroops is negative (before any network call)", async () => {
+    const config = makeConfig({ maxFeeStroops: -1 });
+
+    await expect(
+      submitWithFeeBump(
+        "signed-inner-xdr",
+        config,
+        { sendTransaction: mockSendTransaction, getTransaction: mockGetTransaction } as never,
+        async () => {},
+      ),
+    ).rejects.toThrow(/maxFeeStroops must be a positive integer/i);
+    expect(mockSendTransaction).not.toHaveBeenCalled();
+    expect(mockGetTransaction).not.toHaveBeenCalled();
+  });
 });
 
 // ── feeBumpStatusLabel ─────────────────────────────────────────────────────────

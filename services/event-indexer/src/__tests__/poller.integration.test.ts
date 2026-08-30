@@ -79,7 +79,7 @@ function makeRawEvent(
 
 // ── Imports (after mocks are registered) ─────────────────────────────────────
 
-import { ContractPoller } from "../poller.js";
+import { ContractPoller, backoffDelayMs } from "../poller.js";
 import { rpc } from "@stellar/stellar-sdk";
 import type { ContractConfig } from "../types.js";
 
@@ -211,7 +211,8 @@ describe("ContractPoller — RPC error resilience", () => {
     mockGetEvents.mockRejectedValue(new Error("Connection refused"));
 
     const poller = makePoller();
-    await expect(poller.poll()).resolves.toBeUndefined();
+    // The failed cycle resolves with the next (back-off) poll delay.
+    await expect(poller.poll()).resolves.toBe(5000);
 
     expect(mockUpsertEvent).not.toHaveBeenCalled();
   });
@@ -249,5 +250,45 @@ describe("ContractPoller — gap detection tracking", () => {
     expect(poller.getLastProcessedLedger()).toBe(0);
     await poller.poll();
     expect(poller.getLastProcessedLedger()).toBe(201);
+  });
+});
+
+describe("ContractPoller — RPC error backoff", () => {
+  it("doubles the poll interval after 3 consecutive failures (capped at 8x)", async () => {
+    mockGetEvents.mockRejectedValue(new Error("RPC down"));
+
+    const poller = makePoller();
+    const delays: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      delays.push(await poller.poll());
+    }
+
+    // Failures 1–3 stay at the normal 5s interval; the 4th and 5th double.
+    expect(delays).toEqual([5000, 5000, 5000, 10000, 20000]);
+  });
+
+  it("resets the failure counter after a successful poll", async () => {
+    mockGetEvents
+      .mockRejectedValueOnce(new Error("down"))
+      .mockRejectedValueOnce(new Error("down"))
+      .mockResolvedValueOnce({ events: [] })
+      .mockRejectedValueOnce(new Error("down"))
+      .mockRejectedValueOnce(new Error("down"));
+
+    const poller = makePoller();
+    const delays = [
+      await poller.poll(), // fail 1  → 5000
+      await poller.poll(), // fail 2  → 5000
+      await poller.poll(), // success → resets counter → 5000
+      await poller.poll(), // fail 1  → 5000
+      await poller.poll(), // fail 2  → 5000
+    ];
+
+    expect(delays).toEqual([5000, 5000, 5000, 5000, 5000]);
+  });
+
+  it("caps the backoff delay at 8x the normal interval", () => {
+    expect(backoffDelayMs(5000, 6)).toBe(40000);
+    expect(backoffDelayMs(5000, 10)).toBe(40000);
   });
 });

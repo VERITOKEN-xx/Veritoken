@@ -800,6 +800,14 @@ impl KycRegistry {
             .get(&DataKey::KycStatus(subject.clone()))
             .unwrap_or_else(|| panic_with_error!(env, KycError::NoRecord));
 
+        // Reading the record does not keep it alive on-chain.  Extend its TTL so a
+        // near-expiry record read via get_full_record survives subsequent access.
+        env.storage().persistent().extend_ttl(
+            &DataKey::KycStatus(subject.clone()),
+            THRESHOLD,
+            BUMP,
+        );
+
         // O(N_subject) — reads only this subject's log entries.
         let scount: u32 = env
             .storage()

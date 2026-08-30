@@ -13,8 +13,9 @@
  *        c. Update the cursor to the last event's paging_token.
  *   6. Repeat after `pollIntervalMs`.
  *
- * The poller is intentionally simple — no back-pressure or exponential
- * back-off on RPC errors; a single missed cycle is logged and skipped.
+ * On RPC errors the poller applies exponential back-off: after 3 consecutive
+ * failures the poll interval is doubled, capped at 8x the normal interval.
+ * The failure counter resets on the next successful poll.
  */
 
 import { rpc, scValToNative } from "@stellar/stellar-sdk";
@@ -41,6 +42,22 @@ export const POLL_LIMIT = 200;
 
 // ~8 min of history at 5 s/ledger
 const STARTUP_BACKFILL_LEDGERS = 100;
+
+/**
+ * Exponential back-off for consecutive failed polls.
+ *
+ * Failures 1–3 keep the normal interval. From the 4th consecutive failure the
+ * interval doubles each step, capped at `pollIntervalMs * 8`.
+ */
+export function backoffDelayMs(
+  pollIntervalMs: number,
+  consecutiveFailures: number,
+): number {
+  return Math.min(
+    pollIntervalMs * 2 ** Math.max(0, consecutiveFailures - 3),
+    pollIntervalMs * 8,
+  );
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -78,6 +95,8 @@ export class ContractPoller {
   private readonly pollIntervalMs: number;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  /** Consecutive RPC failures; drives the exponential back-off schedule. */
+  private consecutiveFailures = 0;
   /** Ledger sequence of the last successfully processed event batch. */
   private lastProcessedLedger = 0;
 
@@ -111,15 +130,20 @@ export class ContractPoller {
 
   private scheduleNext(delayMs: number): void {
     this.timer = setTimeout(() => {
-      void this.poll().finally(() => {
-        if (this.running) this.scheduleNext(this.pollIntervalMs);
-      });
+      void this.poll()
+        .then((nextDelay) => {
+          if (this.running) this.scheduleNext(nextDelay);
+        })
+        .catch(() => {
+          // Unexpected poll failure — retry at the normal interval.
+          if (this.running) this.scheduleNext(this.pollIntervalMs);
+        });
     }, delayMs);
   }
 
   // ── Core poll cycle ───────────────────────────────────────────────────────
 
-  async poll(): Promise<void> {
+  async poll(): Promise<number> {
     const { contractId, label } = this.contract;
 
     // 1. Fetch cursor
@@ -148,12 +172,16 @@ export class ContractPoller {
     try {
       response = await this.server.getEvents(request);
     } catch (err) {
+      this.consecutiveFailures += 1;
       console.warn(`[poller:${label}] RPC error — skipping cycle:`, (err as Error).message);
-      return;
+      return backoffDelayMs(this.pollIntervalMs, this.consecutiveFailures);
     }
 
+    // A successful RPC response (even an empty one) resets the back-off counter.
+    this.consecutiveFailures = 0;
+
     const rawEvents = response.events ?? [];
-    if (rawEvents.length === 0) return;
+    if (rawEvents.length === 0) return this.pollIntervalMs;
 
     // 4. Parse
     const parsed = parseEvents(rawEvents.map(toRaw));
@@ -234,6 +262,8 @@ export class ContractPoller {
     } finally {
       client.release();
     }
+
+    return this.pollIntervalMs;
   }
 
   /** Return the ledger sequence of the last successfully processed batch. */
