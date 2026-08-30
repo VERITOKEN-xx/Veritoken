@@ -164,7 +164,9 @@ export function lookupError(
 
 /**
  * Parse a raw Soroban error string (e.g. "Error(Contract, #7)") and return
- * the corresponding ContractError, or null if unparseable or unknown.
+ * the corresponding ContractError. Returns null if the string isn't a Soroban
+ * contract error; returns a well-defined "UnknownContractError" fallback if
+ * it is one but the code isn't in the lookup table.
  */
 export function parseContractError(
   contract: ContractName,
@@ -172,7 +174,16 @@ export function parseContractError(
 ): ContractError | null {
   const match = rawError.match(/Error\(Contract,\s*#(\d+)\)/);
   if (!match) return null;
-  return lookupError(contract, parseInt(match[1], 10));
+  const code = parseInt(match[1], 10);
+  const known = lookupError(contract, code);
+  if (known) return known;
+  // No table entry for this contract/code combination: return a well-defined
+  // fallback instead of null so callers that access `.name` don't throw.
+  return {
+    code,
+    name: "UnknownContractError",
+    message: `Unknown error ${code} from contract ${contract}`,
+  };
 }
 
 /**

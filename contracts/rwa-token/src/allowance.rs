@@ -42,6 +42,7 @@ pub fn write_allowance(
     from: Address,
     spender: Address,
     amount: i128,
+    // Ledger sequence number (not UNIX timestamp). Use env.ledger().sequence() + N for future expiry.
     expiration_ledger: u32,
 ) {
     if amount > 0 && expiration_ledger < env.ledger().sequence() {

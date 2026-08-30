@@ -168,6 +168,7 @@ pub struct KycRecord {
     pub status: KycStatus,
     pub verifier: Address,
     pub tier: u32,
+    // UNIX timestamp in seconds (not ledger sequence). Use env.ledger().timestamp() + N for future expiry.
     pub expiry: u64,
     pub jurisdiction: String,
 }
