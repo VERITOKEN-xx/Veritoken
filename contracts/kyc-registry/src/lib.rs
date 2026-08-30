@@ -1073,6 +1073,8 @@ impl KycRegistry {
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     fn validate_jurisdiction(env: &Env, jurisdiction: &String) {
+        // Invalid jurisdiction attempts are not emitted as events to avoid
+        // event-stream spam from malicious callers.
         if jurisdiction.len() != 2 {
             panic_with_error!(env, KycError::InvalidJurisdiction);
         }

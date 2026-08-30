@@ -48,10 +48,8 @@ interface NotificationState {
   clearAll: () => void;
 }
 
-let _seq = 0;
-
 function makeId(): string {
-  return `notif-${Date.now()}-${++_seq}`;
+  return crypto.randomUUID();
 }
 
 export const useNotificationStore = create<NotificationState>((set, _get) => ({
