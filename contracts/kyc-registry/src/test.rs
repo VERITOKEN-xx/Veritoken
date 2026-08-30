@@ -777,6 +777,26 @@ fn test_revoke_all_by_verifier_revokes_approved_subjects() {
 }
 
 #[test]
+fn test_revoke_all_at_cap() {
+    let (env, client, admin) = setup();
+    let verifier = Address::generate(&env);
+    client.add_verifier(&admin, &verifier);
+
+    let mut subjects = Vec::new(&env);
+    for _ in 0..50 {
+        let subject = Address::generate(&env);
+        client.approve(&verifier, &subject, &0, &0, &js(&env, "US"));
+        subjects.push_back(subject);
+    }
+
+    client.revoke_all_by_verifier(&admin, &verifier);
+
+    for subject in subjects.iter() {
+        assert!(!client.is_approved(&subject));
+    }
+}
+
+#[test]
 fn test_revoke_all_by_verifier_records_lifecycle() {
     let (env, client, admin) = setup();
     let verifier = Address::generate(&env);
