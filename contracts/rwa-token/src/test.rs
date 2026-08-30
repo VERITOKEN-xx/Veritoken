@@ -7,7 +7,7 @@ use compliance_engine::{ComplianceEngine, ComplianceEngineClient, ComplianceRule
 use kyc_registry::{KycRegistry, KycRegistryClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    vec, Address, Env, String,
+    vec, Address, Env, Error, String,
 };
 
 #[allow(dead_code)]
@@ -160,6 +160,22 @@ fn test_transfer_blocked_without_kyc_on_receiver() {
 
     let res = h.token.try_transfer(&alice, &bob, &100);
     assert!(res.is_err());
+}
+
+#[test]
+fn test_transfer_while_paused() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    let bob = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.approve_kyc(&bob);
+    h.mint(&alice, 1_000);
+
+    h.compliance.pause();
+    assert_eq!(
+        h.token.try_transfer(&alice, &bob, &100),
+        Err(Ok(Error::from(crate::RwaError::TransferBlocked)))
+    );
 }
 
 #[test]
