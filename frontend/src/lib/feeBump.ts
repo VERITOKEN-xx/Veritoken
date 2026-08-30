@@ -147,6 +147,10 @@ export async function submitWithFeeBump(
   server: rpc.Server = getServer(),
   sleep: (ms: number) => Promise<void> = defaultSleep,
 ): Promise<FeeBumpResult> {
+  if (config.maxFeeStroops <= 0) {
+    throw new Error("FeeBumpConfig.maxFeeStroops must be a positive integer");
+  }
+
   const innerTx = TransactionBuilder.fromXDR(
     innerXdr,
     NETWORK_PASSPHRASE,

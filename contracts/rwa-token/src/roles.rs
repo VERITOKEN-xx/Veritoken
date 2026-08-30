@@ -71,6 +71,7 @@ pub fn remove_role_holder(env: &Env, role: &Symbol) {
 /// This is the primary guard used by role-protected operations.  The admin
 /// always passes regardless of role assignments.
 pub fn require_admin_or_role(env: &Env, caller: &Address, role: &Symbol) {
+    // Both read_admin and read_role_holder extend instance TTL; the double extend is benign but redundant.
     caller.require_auth();
     let admin = read_admin(env);
     if *caller == admin {
