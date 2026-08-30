@@ -112,6 +112,11 @@ function isRetryable(err: unknown): boolean {
 /**
  * Returns the next doubled fee clamped to `cap`, or `null` when `current`
  * already equals or exceeds `cap` (no further escalation possible).
+ *
+ * Return-value semantics:
+ *   null  → current >= cap; stop bumping entirely (caller should give up)
+ *   cap   → doubling would exceed cap; try once at the maximum fee
+ *   2*cur → normal exponential step
  */
 export function nextFee(current: number, cap: number): number | null {
   if (current >= cap) return null;
