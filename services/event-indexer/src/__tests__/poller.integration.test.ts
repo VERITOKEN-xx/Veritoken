@@ -292,3 +292,34 @@ describe("ContractPoller — RPC error backoff", () => {
     expect(backoffDelayMs(5000, 10)).toBe(40000);
   });
 });
+
+describe("ContractPoller — scheduling drift compensation", () => {
+  it("compensates the next poll delay for how long the poll cycle took", async () => {
+    mockGetEvents.mockResolvedValue({ events: [] });
+
+    vi.useFakeTimers();
+    const nowSpy = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(1_000) // startTime captured before the poll
+      .mockReturnValueOnce(1_800); // elapsed check after the poll resolves (800ms poll)
+
+    const poller = makePoller();
+    poller.start();
+
+    // Run the initial (0ms) timer and flush the poll() promise chain.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockGetEvents).toHaveBeenCalledTimes(1);
+
+    // Uncompensated, the next poll would fire 5000ms later; with the 800ms
+    // poll duration subtracted it should fire at 4200ms instead.
+    await vi.advanceTimersByTimeAsync(4199);
+    expect(mockGetEvents).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mockGetEvents).toHaveBeenCalledTimes(2);
+
+    poller.stop();
+    nowSpy.mockRestore();
+    vi.useRealTimers();
+  });
+});
