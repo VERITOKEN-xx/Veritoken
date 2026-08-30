@@ -144,3 +144,8 @@ pub fn emit_external_uri_cleared(env: &Env) {
     env.events()
         .publish((Symbol::new(env, "ext_uri_cleared"),), ());
 }
+
+pub fn emit_batch_transfer_completed(env: &Env, count: u32) {
+    env.events().publish((symbol_short!("batch_xfer"),), count);
+}
+

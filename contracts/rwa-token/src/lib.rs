@@ -373,6 +373,7 @@ impl RwaToken {
     // ── SEP-41 Token Interface ────────────────────────────────────────────────
 
     pub fn allowance(env: Env, from: Address, spender: Address) -> i128 {
+        // Instance TTL is extended by the first storage helper called in this function.
         allowance::read_allowance(&env, from, spender).amount
     }
 
@@ -395,6 +396,7 @@ impl RwaToken {
     }
 
     pub fn balance(env: Env, id: Address) -> i128 {
+        // Instance TTL is extended by the first storage helper called in this function.
         balance::read_balance(&env, id)
     }
 
@@ -404,6 +406,7 @@ impl RwaToken {
     /// Sequence: guard → auth → validate_sender → validate_recipient →
     ///           apply_transfer_leg → unregister_holder (if drained) → emit → unlock.
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        // Instance TTL is extended by the first storage helper called in this function.
         Self::enter_transfer_guard(&env);
         from.require_auth();
         let mut recipients = Vec::new(&env);
@@ -429,6 +432,7 @@ impl RwaToken {
     }
 
     pub fn burn(env: Env, from: Address, amount: i128) {
+        // Instance TTL is extended by the first storage helper called in this function.
         from.require_auth();
         if amount <= 0 {
             panic_with_error!(env, RwaError::NegativeAmount);
@@ -494,6 +498,7 @@ impl RwaToken {
     /// Mints `amount` tokens to `to`.
     /// `caller` must be the admin or the `"liquidity"` role holder.
     pub fn mint(env: Env, caller: Address, to: Address, amount: i128) {
+        // Instance TTL is extended by the first storage helper called in this function.
         roles::require_admin_or_role(&env, &caller, &Symbol::new(&env, roles::ROLE_LIQUIDITY));
         if amount <= 0 {
             panic_with_error!(env, RwaError::NegativeAmount);
@@ -537,6 +542,7 @@ impl RwaToken {
         from.require_auth();
         let plan = Self::prepare_transfer_plan(&env, &from, &recipients);
         Self::execute_transfer_plan(&env, &from, &recipients, &plan);
+        events::emit_batch_transfer_completed(&env, recipients.len() as u32);
         Self::exit_transfer_guard(&env);
     }
 
@@ -553,6 +559,7 @@ impl RwaToken {
         let plan = Self::prepare_transfer_plan(&env, &from, &recipients);
         allowance::spend_allowance(&env, from.clone(), spender, plan.total_amount);
         Self::execute_transfer_plan(&env, &from, &recipients, &plan);
+        events::emit_batch_transfer_completed(&env, recipients.len() as u32);
         Self::exit_transfer_guard(&env);
     }
 

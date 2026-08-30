@@ -46,6 +46,7 @@ export interface FeeBumpConfig {
 export const DEFAULT_FEE_BUMP_CONFIG: Omit<FeeBumpConfig, "feeBumpSource"> = {
   initialFeeStroops: Number(BASE_FEE) * 10,   // 1 000 stroops
   maxFeeStroops: Number(BASE_FEE) * 1_000,    // 100 000 stroops
+  // One more retry than the base SDK pipeline because fee bumps include an escalated fallback attempt.
   maxRetries: 4,
   backoffMs: 500,
 };
