@@ -132,7 +132,7 @@ export const useWallet = create<WalletStore>((set, get) => ({
     if (!(await instance.isAvailable())) {
       throw new Error(
         type === "freighter"
-          ? "Freighter extension is not installed."
+          ? "Freighter is not installed. Install it from freighter.app."
           : type === "ledger"
             ? "Ledger via WebUSB requires a browser with WebUSB support (Chrome, Edge, Brave, or Opera)."
             : "WalletConnect is not supported in this environment.",
@@ -219,8 +219,7 @@ export const useWallet = create<WalletStore>((set, get) => ({
 
     if (!freighter) {
       throw new Error(
-        "Freighter wallet is not installed or unavailable. " +
-        "Use the wallet selector to choose an alternative provider.",
+        "Freighter is not installed. Install it from freighter.app."
       );
     }
 
