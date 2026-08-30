@@ -119,6 +119,15 @@ describe("parseEvent — known event schema", () => {
     expect(e.contractId).toBe(CONTRACT_ID);
   });
 
+  it("decodes rcv_exe (recovery executed): oldAdmin (index 0) and newAdmin (index 1)", () => {
+    const e = parseEvent(rawEvent(["rcv_exe"], [ALICE, BOB]));
+    expect(e.name).toBe("rcv_exe");
+    if (e.known && e.name === "rcv_exe") {
+      expect(e.data.oldAdmin).toBe(ALICE);
+      expect(e.data.newAdmin).toBe(BOB);
+    }
+  });
+
   it("decodes migrated: fromVersion (index 0) and toVersion (index 1), no nonce field", () => {
     const e = parseEvent(rawEvent(
       ["migrated"],

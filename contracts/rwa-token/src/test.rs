@@ -2395,6 +2395,29 @@ fn test_recovery_execute_replaces_admin_and_bumps_nonce() {
     h.token.approve_recovery(&g3);
     h.token.execute_recovery(&g1);
 
+    // recovery_executed event emitted with old/new admin (#670)
+    {
+        use soroban_sdk::{testutils::Events as _, symbol_short, TryFromVal};
+        let (_, topics, data) = h
+            .env
+            .events()
+            .all()
+            .iter()
+            .rev()
+            .find(|(_, topics, _)| {
+                topics.len() == 1
+                    && TryFromVal::try_from_val(&h.env, &topics.get(0).unwrap())
+                        .map(|topic: soroban_sdk::Symbol| topic == symbol_short!("rcv_exe"))
+                        .unwrap_or(false)
+            })
+            .expect("recovery_executed event should be emitted");
+        assert_eq!(topics.len(), 1);
+        let (old_admin, emitted_new_admin): (Address, Address) =
+            TryFromVal::try_from_val(&h.env, &data).unwrap();
+        assert_eq!(emitted_new_admin, new_admin);
+        assert_ne!(old_admin, new_admin);
+    }
+
     // Active proposal cleared
     assert!(h.token.active_recovery().is_none());
     // AdminNonce bumped
