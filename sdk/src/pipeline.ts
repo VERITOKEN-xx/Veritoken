@@ -311,6 +311,7 @@ export interface PipelineOptions {
 const MAX_BACKOFF_MS = 8_000;
 
 const PIPELINE_DEFAULTS = {
+  // Base retry count for simulation/submission (fee-bump pipeline adds one extra retry).
   maxRetries: 3,
   initialBackoffMs: 400,
   confirmTimeoutMs: 60_000,

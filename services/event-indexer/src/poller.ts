@@ -263,7 +263,9 @@ export class ContractPoller {
       client.release();
     }
 
-    return this.pollIntervalMs;
+    // If we got a full page, retry immediately to drain backlog; otherwise wait the normal interval.
+    const delay = rawEvents.length >= POLL_LIMIT ? 0 : this.pollIntervalMs;
+    return delay;
   }
 
   /** Return the ledger sequence of the last successfully processed batch. */
