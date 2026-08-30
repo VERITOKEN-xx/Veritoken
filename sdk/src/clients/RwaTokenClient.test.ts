@@ -45,7 +45,7 @@ describe("RwaTokenClient — failure modes", () => {
   });
 
   it("write() enriches a KycNotApproved contract error", async () => {
-    const c = client(mockServer({ simulateByMethod: { transfer: simFailure("Error(Contract, #6)") } }));
+    const c = client(mockServer({ simulateByMethod: { transfer: simFailure("Error(Contract, #2)") } }));
     await expect(c.transfer(ALICE, BOB, 1n, async (x) => x)).rejects.toThrow("has not passed KYC verification");
   });
 

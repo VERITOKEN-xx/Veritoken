@@ -37,9 +37,9 @@ describe("ComplianceEngineClient — failure modes", () => {
     await expect(c.isBlocklisted(ALICE)).rejects.toThrow("Simulation error calling is_blocklisted");
   });
 
-  it("write() enriches an Unauthorized contract error", async () => {
+  it("write() enriches a recognised contract error", async () => {
     const c = client(mockServer({ simulateByMethod: { add_to_blocklist: simFailure("Error(Contract, #3)") } }));
-    await expect(c.addToBlocklist(ALICE, ADMIN, async (x) => x)).rejects.toThrow("Unauthorized");
+    await expect(c.addToBlocklist(ALICE, ADMIN, async (x) => x)).rejects.toThrow("NegativeMaxTransferAmount");
   });
 
   it("read() throws a clear error on a malformed (missing-retval) payload", async () => {
