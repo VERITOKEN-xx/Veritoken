@@ -114,7 +114,7 @@ describe("useWallet.connect (legacy Freighter shortcut)", () => {
   it("throws if Freighter is not installed", async () => {
     mockIsConnected.mockResolvedValue(false);
     await expect(useWallet.getState().connect()).rejects.toThrow(
-      /Freighter wallet is not installed/i,
+      /Freighter is not installed/i,
     );
   });
 

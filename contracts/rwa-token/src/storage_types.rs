@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use soroban_sdk::{contracttype, Address, Env, Symbol};
 
 // 86400 s/day ÷ 5 s/ledger = 17280
@@ -102,10 +100,6 @@ pub struct TokenMetadata {
     pub decimal: u32,
     pub name: soroban_sdk::String,
     pub symbol: soroban_sdk::String,
-}
-
-pub fn has_admin(env: &Env) -> bool {
-    env.storage().instance().has(&DataKey::Admin)
 }
 
 /// Canonical export snapshot returned by `get_token_export`.

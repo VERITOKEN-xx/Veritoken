@@ -261,7 +261,7 @@ jobs:
     name: "Config · drift detection"
     runs-on: ubuntu-latest
     # Run after the WASM build so that any manifest written by CI is available.
-    needs: [rust-wasm]
+    needs: [rust-wasm, frontend-build]
     # Allow this job to fail on PRs where no manifest has been committed yet.
     continue-on-error: ${{ github.event_name == 'pull_request' }}
     steps:
