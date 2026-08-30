@@ -24,12 +24,12 @@ describe("lookupError", () => {
     });
   });
 
-  it("returns the correct error for known RWA token codes", () => {
+  it("returns the correct error for known RWA token code 6 (InsufficientAllowance)", () => {
     const err = lookupError("rwa", 6);
     expect(err).toEqual({
       code: 6,
-      name: "KycNotApproved",
-      message: "Address has not passed KYC verification",
+      name: "InsufficientAllowance",
+      message: "Insufficient allowance",
     });
   });
 
@@ -37,8 +37,8 @@ describe("lookupError", () => {
     const err = lookupError("kyc", 3);
     expect(err).toEqual({
       code: 3,
-      name: "Unauthorized",
-      message: "Caller is not authorized to perform this action",
+      name: "NotApproved",
+      message: "Subject does not have an approved KYC record",
     });
   });
 
@@ -46,8 +46,8 @@ describe("lookupError", () => {
     const err = lookupError("compliance", 4);
     expect(err).toEqual({
       code: 4,
-      name: "RuleChangeTooSoon",
-      message: "Compliance rule change is still in the timelock period",
+      name: "MaxHoldersBelowCurrentCount",
+      message: "New max-holders limit is below the current holder count",
     });
   });
 
@@ -81,6 +81,52 @@ describe("lookupError", () => {
   it("returns null for unrecognised codes", () => {
     expect(lookupError("rwa", 999)).toBeNull();
     expect(lookupError("kyc", 500)).toBeNull();
+  });
+
+  // ── RWA errors — full enum coverage ────────────────────────────────────────
+  it("returns correct entry for every RwaError variant", () => {
+    const expected: Array<[number, string]> = [
+      [1, "AlreadyInitialized"],
+      [2, "KycNotApproved"],
+      [3, "TransferBlocked"],
+      [4, "InsufficientBalance"],
+      [5, "AllowanceExpired"],
+      [6, "InsufficientAllowance"],
+      [7, "AccountFrozen"],
+      [8, "NegativeAmount"],
+      [9, "BatchTooLarge"],
+      [10, "RecoveryNotConfigured"],
+      [11, "NotRecoveryMember"],
+      [12, "RecoveryAlreadyActive"],
+      [13, "AlreadyApproved"],
+      [14, "NoActiveRecovery"],
+      [15, "InvalidRecoveryConfig"],
+      [16, "ExceedsMaxSupply"],
+      [17, "InvalidNonce"],
+      [18, "ComplianceEngineUnavailable"],
+      [19, "KycRegistryUnavailable"],
+      [20, "UnauthorizedRole"],
+      [21, "BatchAmountOverflow"],
+      [22, "HolderLimitExceeded"],
+      [23, "MigrationVersionConflict"],
+      [24, "MigrationVersionNotSequential"],
+      [25, "RecoveryExpired"],
+      [26, "InsufficientApprovals"],
+      [27, "ProposerCannotApprove"],
+      [28, "RecoveryCooldown"],
+      [29, "NotInitialized"],
+      [30, "InvalidAssetType"],
+      [31, "EmptyBatch"],
+      [32, "NoPendingAdmin"],
+      [33, "AlreadyAdmin"],
+    ];
+
+    for (const [code, name] of expected) {
+      const err = lookupError("rwa", code);
+      expect(err, `rwa code ${code}`).not.toBeNull();
+      expect(err!.name, `rwa code ${code} name`).toBe(name);
+      expect(err!.message.length, `rwa code ${code} message`).toBeGreaterThan(0);
+    }
   });
 
   // ── KYC errors — full enum coverage ────────────────────────────────────────
@@ -129,15 +175,15 @@ describe("lookupError", () => {
 });
 
 describe("parseContractError", () => {
-  it("parses a standard Soroban error string", () => {
+  it("parses an AlreadyInitialized Soroban error", () => {
     const parsed = parseContractError(
       "rwa",
-      "Error(Contract, #6)"
+      "Error(Contract, #1)"
     );
     expect(parsed).toEqual({
-      code: 6,
-      name: "KycNotApproved",
-      message: "Address has not passed KYC verification",
+      code: 1,
+      name: "AlreadyInitialized",
+      message: "Contract is already initialized",
     });
   });
 
@@ -148,8 +194,8 @@ describe("parseContractError", () => {
     );
     expect(parsed).toEqual({
       code: 2,
-      name: "AlreadyInitialized",
-      message: "Compliance engine is already initialized",
+      name: "MinHoldingPeriodExceeds365Days",
+      message: "Minimum holding period cannot exceed 365 days",
     });
   });
 
@@ -172,8 +218,8 @@ describe("formatContractError", () => {
   it("formats a recognised Soroban contract error", () => {
     const err = new Error("Transaction failed: Error(Contract, #7)");
     const formatted = formatContractError("rwa", err);
-    expect(formatted).toContain("Compliance engine is currently paused");
-    expect(formatted).toContain("CompliancePaused");
+    expect(formatted).toContain("Account is frozen");
+    expect(formatted).toContain("AccountFrozen");
     expect(formatted).toContain("#7");
   });
 

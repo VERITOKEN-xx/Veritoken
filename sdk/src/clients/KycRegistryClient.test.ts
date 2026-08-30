@@ -108,13 +108,13 @@ describe("KycRegistryClient — failure modes", () => {
     expect(srv.sendTransaction).not.toHaveBeenCalled();
   });
 
-  it("write() enriches an on-chain Unauthorized contract error into an AuthError once the local pre-check passes", async () => {
+  it("write() enriches an on-chain NotAdmin contract error into an AuthError once the local pre-check passes", async () => {
     const c = client(mockServer({
       simulateByMethod: {
         get_admins: addrList([ADMIN]),
-        add_verifier: simFailure("Error(Contract, #3)"),
+        add_verifier: simFailure("Error(Contract, #6)"),
       },
     }));
-    await expect(c.addVerifier(ADMIN, VERIFIER, async (x) => x)).rejects.toThrow("Unauthorized");
+    await expect(c.addVerifier(ADMIN, VERIFIER, async (x) => x)).rejects.toThrow("NotAdmin");
   });
 });

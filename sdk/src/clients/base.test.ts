@@ -205,7 +205,7 @@ describe("BaseContractClient", () => {
     // Simulate the case where enrichError gets an Error whose message IS a contract code string.
     // We test this by throwing directly inside a mocked server that returns a contract code.
     const s = {
-      simulateTransaction: vi.fn().mockRejectedValue(new Error("Error(Contract, #6)")),
+      simulateTransaction: vi.fn().mockRejectedValue(new Error("Error(Contract, #2)")),
     } as unknown as rpc.Server;
     await expect(new C(s).r("balance", [encodeAddress(ALICE)])).rejects.toThrow("Address has not passed KYC verification");
   });
@@ -219,9 +219,9 @@ describe("BaseContractClient", () => {
   });
   it("parseError() resolves RWA codes", () => {
     const c = new C(mkS());
-    expect(c.pe("Error(Contract, #9)")?.name).toBe("TransferNotAllowed");
+    expect(c.pe("Error(Contract, #9)")?.name).toBe("BatchTooLarge");
     expect(c.pe("Error(Contract, #4)")?.name).toBe("InsufficientBalance");
-    expect(c.pe("Error(Contract, #6)")?.name).toBe("KycNotApproved");
+    expect(c.pe("Error(Contract, #6)")?.name).toBe("InsufficientAllowance");
   });
   it("parseError() returns null for non-contract strings", () => {
     const c = new C(mkS());
@@ -229,7 +229,7 @@ describe("BaseContractClient", () => {
     expect(c.pe("Error(Auth, #1)")).toBeNull();
   });
   it("formatError() includes name and code", () => {
-    expect(new C(mkS()).fe(new Error("Error(Contract, #8)"))).toContain("Blocklisted");
+    expect(new C(mkS()).fe(new Error("Error(Contract, #8)"))).toContain("NegativeAmount");
   });
   it("formatError() falls back to raw message", () => {
     expect(new C(mkS()).fe(new Error("network timeout"))).toBe("network timeout");
