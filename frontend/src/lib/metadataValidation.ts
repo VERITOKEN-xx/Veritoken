@@ -26,6 +26,9 @@ const ALLOWED_CURRENCIES = new Set([
   "XAU",
 ]);
 
+/** Recognised carbon credit standards accepted by the platform. */
+const CARBON_STANDARDS = new Set(["VCS", "Gold Standard", "CDM", "ACR", "CAR"]);
+
 // ── Address / identity validators (moved from DeployPage.tsx, issue #426 /
 // generalised for issue #447's contract-driven form schemas) ────────────────
 
@@ -153,6 +156,14 @@ export function validateCurrency(value: string): ValidationResult {
     return fail("Currency must be a 3-letter uppercase code (e.g. USD, EUR)");
   if (!ALLOWED_CURRENCIES.has(value))
     return fail("Currency must be a recognised ISO 4217 code");
+  return OK;
+}
+
+/** Carbon standard: restricted to the platform allowlist (VCS, Gold Standard, CDM, ACR, CAR). */
+export function validateCarbonStandard(value: string): ValidationResult {
+  if (!value) return OK;
+  if (!CARBON_STANDARDS.has(value))
+    return fail("Must be a recognised carbon standard (VCS, Gold Standard, CDM, ACR, or CAR)");
   return OK;
 }
 

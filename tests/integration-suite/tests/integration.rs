@@ -30,7 +30,7 @@ extern crate alloc;
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    Address, Env, String,
+    Address, Env, Error, String,
 };
 
 use carbon_credit_token::{CarbonCreditToken, CarbonCreditTokenClient, ProjectMeta};
@@ -38,7 +38,7 @@ use compliance_engine::{ComplianceEngine, ComplianceEngineClient, ComplianceRule
 use invoice_token::{InvoiceMeta, InvoiceToken, InvoiceTokenClient};
 use kyc_registry::{KycRegistry, KycRegistryClient};
 use property_token::{PropertyMeta, PropertyToken, PropertyTokenClient};
-use rwa_token::{ComplianceMetadata, RwaToken, RwaTokenClient};
+use rwa_token::{ComplianceMetadata, RwaError, RwaToken, RwaTokenClient};
 
 // ── Shared setup helpers ──────────────────────────────────────────────────────
 
@@ -331,6 +331,26 @@ fn workflow_kyc_revocation_blocks_transfer() {
     s.onboard(&alice);
     token.transfer(&alice, &bob, &50);
     assert_eq!(token.balance(&bob), 150);
+}
+
+// ── Workflow: transfer to non-KYC address is blocked ──────────────────────────
+
+/// A KYC-approved sender must not be able to transfer to a recipient with no
+/// KYC record at all — the contract must reject with `KycNotApproved`.
+#[test]
+fn test_transfer_to_non_kyc_address() {
+    let s = build_stack();
+    let token = s.deploy_rwa("NonKyc RWA", "NKRWA");
+    let sender = Address::generate(&s.env);
+    let recipient = Address::generate(&s.env);
+
+    s.onboard(&sender);
+    assert!(!s.kyc.is_approved(&recipient));
+
+    token.mint(&s.admin, &sender, &1_000);
+
+    let res = token.try_transfer(&sender, &recipient, &100);
+    assert_eq!(res.unwrap_err().unwrap(), Error::from(RwaError::KycNotApproved));
 }
 
 // ── Workflow 5: invoice full lifecycle ───────────────────────────────────────

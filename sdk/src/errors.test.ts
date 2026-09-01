@@ -209,8 +209,11 @@ describe("parseContractError", () => {
     expect(parseContractError("carbon", "Transaction failed")).toBeNull();
   });
 
-  it("returns null when the error code is not recognised", () => {
-    expect(parseContractError("rwa", "Error(Contract, #9999)")).toBeNull();
+  it("returns a well-defined fallback when the error code is not recognised", () => {
+    const parsed = parseContractError("rwa", "Error(Contract, #9999)");
+    expect(parsed).not.toBeNull();
+    expect(parsed!.name).toBe("UnknownContractError");
+    expect(parsed!.code).toBe(9999);
   });
 });
 
