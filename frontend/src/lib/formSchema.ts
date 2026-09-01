@@ -31,6 +31,8 @@ export function validateForm(
   schema: FormSchema,
   values: Record<string, string>,
 ): Record<string, ValidationResult> {
+  // Result keys appear in schema definition order. Define schema fields in
+  // the desired error-display order.
   const results: Record<string, ValidationResult> = {};
   for (const field of schema) {
     const value = values[field.key] ?? "";

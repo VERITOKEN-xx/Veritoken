@@ -719,6 +719,48 @@ fn test_approve_batch_records_lifecycle_for_each_subject() {
 }
 
 #[test]
+fn test_approve_batch_emits_batch_approved_event() {
+    let (env, client, admin) = setup();
+    let verifier = Address::generate(&env);
+    client.add_verifier(&admin, &verifier);
+
+    let s1 = Address::generate(&env);
+    let s2 = Address::generate(&env);
+    let s3 = Address::generate(&env);
+    let mut subjects = Vec::new(&env);
+    subjects.push_back((s1, 1u32, 0u64, js(&env, "US")));
+    subjects.push_back((s2, 1u32, 0u64, js(&env, "US")));
+    subjects.push_back((s3, 1u32, 0u64, js(&env, "US")));
+    client.approve_batch(&verifier, &subjects);
+
+    use soroban_sdk::{testutils::Events as _, Symbol, TryFromVal};
+    let batch_topic = symbol_short!("batch_app");
+    let batch_events: std::vec::Vec<u32> = env
+        .events()
+        .all()
+        .iter()
+        .filter_map(|(_, topics, data)| {
+            let matches = topics
+                .get(0)
+                .map(|t| {
+                    Symbol::try_from_val(&env, &t)
+                        .map(|s| s == batch_topic)
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if matches {
+                u32::try_from_val(&env, &data).ok()
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    assert_eq!(batch_events.len(), 1, "exactly one batch_app event should be emitted");
+    assert_eq!(batch_events[0], 3u32, "batch_app event should carry the approved count");
+}
+
+#[test]
 fn test_revoke_batch_records_lifecycle_for_each_subject() {
     let (env, client, admin) = setup();
     let verifier = Address::generate(&env);

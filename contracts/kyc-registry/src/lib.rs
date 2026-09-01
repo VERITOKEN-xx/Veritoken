@@ -389,6 +389,7 @@ impl KycRegistry {
         if subjects.len() > 20 {
             panic_with_error!(env, KycError::BatchTooLarge);
         }
+        let subjects_count = subjects.len();
         for (subject, tier, expiry, jurisdiction) in subjects.iter() {
             Self::validate_jurisdiction(&env, &jurisdiction);
             Self::record_transition(
@@ -414,6 +415,8 @@ impl KycRegistry {
                 verifier.clone(),
             );
         }
+        env.events()
+            .publish((symbol_short!("batch_app"),), subjects_count as u32);
     }
 
     pub fn reject(env: Env, verifier: Address, subject: Address) {
