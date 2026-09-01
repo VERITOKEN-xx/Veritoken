@@ -15,8 +15,8 @@
 
 import type { IndexerConfig, ContractConfig } from "./types.js";
 
-const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
-const MAINNET_PASSPHRASE = "Public Global Stellar Network ; September 2015";
+export const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
+export const MAINNET_PASSPHRASE = "Public Global Stellar Network ; September 2015";
 
 function parseContracts(raw: string): ContractConfig[] {
   if (!raw.trim()) return [];

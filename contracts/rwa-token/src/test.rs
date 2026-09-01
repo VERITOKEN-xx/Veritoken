@@ -2583,6 +2583,17 @@ fn test_propose_admin_rejects_current_admin() {
 }
 
 #[test]
+fn test_accept_admin_no_pending() {
+    use crate::RwaError;
+    use soroban_sdk::Error;
+
+    let h = setup();
+    // No propose_admin call has been made, so there is no pending admin.
+    let res = h.token.try_accept_admin();
+    assert_eq!(res.unwrap_err().unwrap(), Error::from(RwaError::NoPendingAdmin));
+}
+
+#[test]
 fn test_propose_admin_accepts_different_address() {
     let h = setup();
     let new_admin = Address::generate(&h.env);
