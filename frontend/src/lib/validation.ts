@@ -8,6 +8,25 @@ interface AmountValidationResult {
   error: string | null;
 }
 
+// Small reference-stability cache: same (value, decimals) input returns the
+// same result object, so components that pass this result down to memoized
+// children don't force a re-render just because the parent re-rendered.
+// This is a plain function (not a React hook), so it must stay callable
+// outside a render context — see validation.test.ts.
+const CACHE_LIMIT = 20;
+const resultCache = new Map<string, AmountValidationResult>();
+
+function cacheResult(key: string, result: AmountValidationResult): AmountValidationResult {
+  if (resultCache.has(key)) {
+    resultCache.delete(key);
+  } else if (resultCache.size >= CACHE_LIMIT) {
+    const oldestKey = resultCache.keys().next().value;
+    if (oldestKey !== undefined) resultCache.delete(oldestKey);
+  }
+  resultCache.set(key, result);
+  return result;
+}
+
 /**
  * Validate an amount string for token transactions.
  * @param value - The amount string to validate
@@ -17,6 +36,16 @@ interface AmountValidationResult {
 export function useAmountValidation(
   value: string,
   decimals: number = 7,
+): AmountValidationResult {
+  const cacheKey = `${decimals}:${value}`;
+  const cached = resultCache.get(cacheKey);
+  if (cached) return cached;
+  return cacheResult(cacheKey, computeAmountValidation(value, decimals));
+}
+
+function computeAmountValidation(
+  value: string,
+  decimals: number,
 ): AmountValidationResult {
   // Empty values are invalid (error suppressed to avoid red text before typing)
   if (!value || value.trim() === "") {

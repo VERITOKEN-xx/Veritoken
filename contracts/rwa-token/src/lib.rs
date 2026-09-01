@@ -426,6 +426,9 @@ impl RwaToken {
         let mut recipients = Vec::new(&env);
         recipients.push_back(RecipientEntry { to, amount });
         let plan = Self::prepare_transfer_plan(&env, &from, &recipients);
+        // spender == from is allowed; the holder may approve themselves, though
+        // transfer() is simpler. Behaves the same as a direct transfer with an
+        // extra allowance step.
         allowance::spend_allowance(&env, from.clone(), spender, plan.total_amount);
         Self::execute_transfer_plan(&env, &from, &recipients, &plan);
         Self::exit_transfer_guard(&env);

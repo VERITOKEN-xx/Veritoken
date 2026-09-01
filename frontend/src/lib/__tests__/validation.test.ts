@@ -55,6 +55,18 @@ describe("useAmountValidation", () => {
     const result = useAmountValidation("999999999999");
     expect(result.isValid).toBe(false);
   });
+
+  it("returns a stable reference for the same (value, decimals) pair", () => {
+    const first = useAmountValidation("100", 7);
+    const second = useAmountValidation("100", 7);
+    expect(second).toBe(first);
+  });
+
+  it("returns a distinct reference once the value changes", () => {
+    const first = useAmountValidation("100", 7);
+    const second = useAmountValidation("200", 7);
+    expect(second).not.toBe(first);
+  });
 });
 
 describe("validateStellarAddress", () => {
