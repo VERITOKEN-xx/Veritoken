@@ -201,6 +201,36 @@ fn test_constructor_rejects_blank_symbol() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #34)")]
+fn test_constructor_rejects_empty_symbol_before_writing_state() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let kyc_id = env.register(KycRegistry, ());
+    KycRegistryClient::new(&env, &kyc_id).initialize(&admin);
+    let compliance_id = env.register(ComplianceEngine, ());
+    ComplianceEngineClient::new(&env, &compliance_id).initialize(&admin, &kyc_id, &0u64);
+
+    // An empty symbol must fail with InvalidMetadata, even when asset_type is
+    // also invalid, proving the metadata guard runs before any other check
+    // or state write in the constructor.
+    env.register(
+        RwaToken,
+        (
+            admin,
+            7u32,
+            String::from_str(&env, "Veritoken RWA"),
+            String::from_str(&env, ""),
+            String::from_str(&env, "not_an_asset_type"),
+            kyc_id,
+            compliance_id,
+            Option::<ComplianceMetadata>::None,
+            0i128,
+        ),
+    );
+}
+
+#[test]
 fn test_mint_requires_kyc() {
     let h = setup();
     let user = Address::generate(&h.env);

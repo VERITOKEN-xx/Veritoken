@@ -212,3 +212,29 @@ describe("parseContracts — duplicate detection", () => {
     );
   });
 });
+
+describe("parseContracts — whitespace in label and contract ID segments", () => {
+  it("trims whitespace around both the label and the contract ID", () => {
+    withEnv(
+      { ...BASE_ENV, CONTRACT_IDS: " rwa \t:  CCONTRACTID1111111111111111111111111111111111111111 \t" },
+      () => {
+        const config = loadConfig();
+        expect(config.contracts).toEqual([
+          { label: "rwa", contractId: "CCONTRACTID1111111111111111111111111111111111111111" },
+        ]);
+      }
+    );
+  });
+
+  it("throws when whitespace remains inside a contract ID", () => {
+    withEnv({ ...BASE_ENV, CONTRACT_IDS: "rwa:CCONTRACTID1111 111111111111111111111111111111111111" }, () => {
+      expect(() => loadConfig()).toThrow(/whitespace inside an entry/);
+    });
+  });
+
+  it("throws when whitespace remains inside a label", () => {
+    withEnv({ ...BASE_ENV, CONTRACT_IDS: "my rwa:CCONTRACTID1111111111111111111111111111111111111111" }, () => {
+      expect(() => loadConfig()).toThrow(/whitespace inside an entry/);
+    });
+  });
+});

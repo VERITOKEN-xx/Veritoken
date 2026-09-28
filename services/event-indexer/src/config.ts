@@ -45,6 +45,16 @@ function parseContracts(raw: string): ContractConfig[] {
     }
   }
 
+  // Reject whitespace left inside a label or contract ID after trimming, so a
+  // malformed identifier (e.g. "rwa:CABC DEF") is never stored in the config.
+  for (const c of contracts) {
+    if (/\s/.test(c.label) || /\s/.test(c.contractId)) {
+      throw new Error(
+        `CONTRACT_IDS contains whitespace inside an entry (label: "${c.label}", contractId: "${c.contractId}")`
+      );
+    }
+  }
+
   // Fix 4: reject duplicate labels and duplicate contract IDs
   const seenLabels     = new Set<string>();
   const seenContractIds = new Set<string>();

@@ -23,4 +23,28 @@ describe("buildContractTx", () => {
       ),
     ).toThrow(/method must be a non-empty string/);
   });
+
+  it.each([
+    "",
+    "not-an-address",
+    ` ${Keypair.random().publicKey()}`,
+    Keypair.random().secret(),
+    CONTRACT_ID,
+  ])("rejects invalid source account %j", (source) => {
+    expect(() =>
+      buildContractTx(CONTRACT_ID, "name", [], Networks.TESTNET, source, "1"),
+    ).toThrow(/source must be a valid Stellar account address/);
+  });
+
+  it("accepts a valid G… source account", () => {
+    const xdr = buildContractTx(
+      CONTRACT_ID,
+      "name",
+      [],
+      Networks.TESTNET,
+      Keypair.random().publicKey(),
+      "1",
+    );
+    expect(xdr.length).toBeGreaterThan(0);
+  });
 });
