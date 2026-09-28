@@ -8,6 +8,7 @@ import {
   Account,
   Contract,
   Keypair,
+  StrKey,
   TransactionBuilder,
   type xdr,
 } from "@stellar/stellar-sdk";
@@ -41,6 +42,13 @@ export function buildContractTx(
   if ((source === undefined) !== (sequence === undefined)) {
     throw new Error("source and sequence must be provided together");
   }
+  if (source !== undefined && !StrKey.isValidEd25519PublicKey(source)) {
+    throw new Error("source must be a valid Stellar account ID (G...)");
+  }
+  const fee = opts.fee ?? "100";
+  if (!/^\d+$/.test(fee) || BigInt(fee) <= 0n) {
+    throw new Error("fee must be a positive integer string");
+  }
 
   const account =
     source !== undefined && sequence !== undefined
@@ -48,7 +56,7 @@ export function buildContractTx(
       : new Account(SIM_SOURCE, "0");
 
   return new TransactionBuilder(account, {
-    fee: opts.fee ?? "100",
+    fee,
     networkPassphrase,
   })
     .addOperation(new Contract(contractId).call(method, ...args))

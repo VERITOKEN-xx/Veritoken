@@ -23,4 +23,19 @@ describe("buildContractTx", () => {
       ),
     ).toThrow(/method must be a non-empty string/);
   });
+
+  it.each(["0", "-100", "", "abc"])("rejects non-positive or invalid fee %j", (fee) => {
+    expect(() =>
+      buildContractTx(CONTRACT_ID, "name", [], Networks.TESTNET, undefined, undefined, { fee }),
+    ).toThrow(/fee must be a positive integer string/);
+  });
+
+  it.each(["", "not-an-address", CONTRACT_ID, Keypair.random().secret()])(
+    "rejects malformed source account %j",
+    (source) => {
+      expect(() =>
+        buildContractTx(CONTRACT_ID, "name", [], Networks.TESTNET, source, "1"),
+      ).toThrow(/source must be a valid Stellar account ID/);
+    },
+  );
 });
