@@ -86,6 +86,7 @@ function makePipeline(srv: unknown, overrides: PipelineOptions = {}) {
 describe("isTransientError", () => {
   it("recognises timeout", () => expect(isTransientError(new Error("Request timeout"))).toBe(true));
   it("recognises ECONNRESET", () => expect(isTransientError(new Error("ECONNRESET"))).toBe(true));
+  it("recognises Node.js socket read ECONNRESET", () => expect(isTransientError(new Error("read ECONNRESET"))).toBe(true));
   it("recognises 503", () => expect(isTransientError(new Error("HTTP 503"))).toBe(true));
   it("recognises 429", () => expect(isTransientError(new Error("429 Too Many Requests"))).toBe(true));
   it("recognises ENOTFOUND (DNS failure)", () => expect(isTransientError(new Error("getaddrinfo ENOTFOUND rpc.testnet.stellar.org"))).toBe(true));
