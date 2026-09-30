@@ -147,6 +147,18 @@ fn test_update_holder_since_rejects_negative_timestamp() {
 }
 
 #[test]
+fn test_update_holder_since_rejects_zero_timestamp() {
+    let (env, ce, _) = setup();
+    let holder = Address::generate(&env);
+
+    assert_eq!(
+        ce.try_update_holder_since(&holder, &0),
+        Err(Ok(Error::from(ComplianceError::InvalidHolderSince)))
+    );
+    assert!(!ce.lockup_status(&holder).is_holder);
+}
+
+#[test]
 fn test_max_holders_blocks_new_but_allows_existing() {
     let (env, ce, _) = setup();
     let h1 = Address::generate(&env);
@@ -1471,6 +1483,84 @@ fn test_set_tier_policy_rejects_invalid_min_tiers() {
     assert_eq!(ce.tier_policy_count(), 0);
 }
 
+// Fix — set_tier_policy: reject min_from_tier above supported range (#849)
+// A min_from_tier value above 100 is outside the valid tier range and was
+// previously stored silently, making the from-tier enforcement check
+// unpredictable for any address whose tier is within the normal range.
+// The fix rejects it with InvalidTierPolicy before state is written.
+#[test]
+fn test_set_tier_policy_rejects_min_from_tier_above_range() {
+    let (_, ce, _) = setup();
+
+    // min_from_tier = 101 is above the valid range [0, 100] — must be rejected.
+    assert_eq!(
+        ce.try_set_tier_policy(
+            &0u32,
+            &1u32,
+            &TierPolicy {
+                blocked: false,
+                max_transfer_amount: 0,
+                min_from_tier: 101,
+                min_to_tier: 0,
+            }
+        ),
+        Err(Ok(Error::from(ComplianceError::InvalidTierPolicy)))
+    );
+    assert!(ce.get_tier_policy(&0u32, &1u32).is_none());
+
+    // Normal path: min_from_tier at the boundary value 100 must be accepted.
+    ce.set_tier_policy(
+        &0u32,
+        &1u32,
+        &TierPolicy {
+            blocked: false,
+            max_transfer_amount: 0,
+            min_from_tier: 100,
+            min_to_tier: 0,
+        },
+    );
+    assert!(ce.get_tier_policy(&0u32, &1u32).is_some());
+}
+
+// Fix — set_tier_policy: reject min_to_tier above supported range (#848)
+// A min_to_tier value above 100 is outside the valid tier range and was
+// previously stored silently, making the to-tier enforcement check produce
+// confusing compliance decisions for in-range recipients.
+// The fix rejects it with InvalidTierPolicy before state is written.
+#[test]
+fn test_set_tier_policy_rejects_min_to_tier_above_range() {
+    let (_, ce, _) = setup();
+
+    // min_to_tier = 101 is above the valid range [0, 100] — must be rejected.
+    assert_eq!(
+        ce.try_set_tier_policy(
+            &0u32,
+            &1u32,
+            &TierPolicy {
+                blocked: false,
+                max_transfer_amount: 0,
+                min_from_tier: 0,
+                min_to_tier: 101,
+            }
+        ),
+        Err(Ok(Error::from(ComplianceError::InvalidTierPolicy)))
+    );
+    assert!(ce.get_tier_policy(&0u32, &1u32).is_none());
+
+    // Normal path: min_to_tier at the boundary value 100 must be accepted.
+    ce.set_tier_policy(
+        &0u32,
+        &1u32,
+        &TierPolicy {
+            blocked: false,
+            max_transfer_amount: 0,
+            min_from_tier: 0,
+            min_to_tier: 100,
+        },
+    );
+    assert!(ce.get_tier_policy(&0u32, &1u32).is_some());
+}
+
 #[test]
 fn test_policy_records_normalize_empty_descriptions() {
     let (env, ce, _) = setup();
@@ -1537,4 +1627,56 @@ fn test_propose_rules_rejects_empty_description() {
     ce.propose_rules(&rules(0, 0, 0, false), &desc);
     let proposal = ce.get_pending_proposal().expect("proposal must be stored");
     assert_eq!(proposal.description, desc);
+}
+
+// Fix #844 — deny_transfer: reject empty evaluation reasons
+// Before the fix, deny_transfer did not exist at all, making it impossible to
+// manually log a transfer denial with a traceable reason.  Without an explicit
+// reason the compliance audit trail cannot support post-facto debugging or
+// review of why a specific transfer was refused.
+// The new function requires a non-empty reason string and panics with
+// EmptyEvaluationReason before any state is written when the string is empty.
+#[test]
+fn test_deny_transfer_rejects_empty_reason() {
+    let (env, ce, _) = setup();
+    let from = Address::generate(&env);
+    let to = Address::generate(&env);
+    let empty = String::from_str(&env, "");
+
+    // Empty reason must be rejected — no event emitted, no state written.
+    assert_eq!(
+        ce.try_deny_transfer(&from, &to, &100, &empty),
+        Err(Ok(Error::from(ComplianceError::EmptyEvaluationReason)))
+    );
+
+    // Normal path: non-empty reason must succeed and emit a deny_xfr event.
+    let reason = String::from_str(&env, "blocklisted jurisdiction flagged by compliance officer");
+    ce.deny_transfer(&from, &to, &100, &reason);
+}
+
+// Fix #846 — append_policy_record: reject empty governance comments
+// Before the fix, there was no public append_policy_record entry point.
+// Blank governance comments would have had to be stored through internal
+// paths, making the policy history hard to interpret.
+// The new public function requires a non-empty comment and panics with
+// EmptyGovernanceComment before any state is written when the string is empty.
+#[test]
+fn test_append_policy_record_rejects_empty_comment() {
+    let (env, ce, _) = setup();
+    let empty = String::from_str(&env, "");
+
+    // Empty governance comment must be rejected — policy version count unchanged.
+    let before = ce.policy_version_count();
+    assert_eq!(
+        ce.try_append_policy_record(&empty),
+        Err(Ok(Error::from(ComplianceError::EmptyGovernanceComment)))
+    );
+    assert_eq!(ce.policy_version_count(), before);
+
+    // Normal path: non-empty comment must succeed and add a new policy version.
+    let comment = String::from_str(&env, "quarterly review — no rule changes required");
+    ce.append_policy_record(&comment);
+    assert_eq!(ce.policy_version_count(), before + 1);
+    let record = ce.get_current_policy_version();
+    assert_eq!(record.description, comment);
 }

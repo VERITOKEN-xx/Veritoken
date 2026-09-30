@@ -1760,3 +1760,64 @@ fn test_constructor_accepts_nonempty_project_id() {
         String::from_str(&env, "VCS-9999")
     );
 }
+
+// Fix #845 — append_retirement_receipt: reject malformed beneficiary addresses
+// Before the fix, there was no public append_retirement_receipt entry point.
+// An invalid (non-KYC-approved) beneficiary address could be associated with
+// a retirement record, polluting the retirement audit trail and making later
+// evidence checks less trustworthy.
+// The new function validates the optional beneficiary_address: when Some(addr)
+// is provided, `addr` must be KYC-approved.  An unapproved address is rejected
+// with InvalidBeneficiaryAddress before any state is written.
+#[test]
+fn test_append_retirement_receipt_rejects_unapproved_beneficiary_address() {
+    use crate::CarbonError;
+    use soroban_sdk::Error;
+
+    let h = setup();
+    let retiree = Address::generate(&h.env);
+    h.approve_kyc(&retiree);
+    h.token.mint(&retiree, &100);
+
+    // An address that has never been KYC-approved must be rejected.
+    let bad_addr = Address::generate(&h.env);
+
+    let before_count = h.token.retirement_count();
+    let result = h.token.try_append_retirement_receipt(
+        &retiree,
+        &10,
+        &String::from_str(&h.env, "Acme Corp"),
+        &String::from_str(&h.env, "annual offset"),
+        &Some(bad_addr),
+    );
+    assert_eq!(
+        result.err().and_then(|e| e.ok()),
+        Some(Error::from(CarbonError::InvalidBeneficiaryAddress))
+    );
+    // No receipt must have been written.
+    assert_eq!(h.token.retirement_count(), before_count);
+
+    // Normal path: when beneficiary_address is None, no KYC check is required.
+    let receipt = h.token.append_retirement_receipt(
+        &retiree,
+        &10,
+        &String::from_str(&h.env, "Acme Corp"),
+        &String::from_str(&h.env, "annual offset"),
+        &None,
+    );
+    assert_eq!(h.token.retirement_count(), before_count + 1);
+    assert_eq!(receipt.amount, 10);
+
+    // Normal path: when beneficiary_address is Some(approved_addr), it is accepted.
+    let approved_addr = Address::generate(&h.env);
+    h.approve_kyc(&approved_addr);
+    let receipt2 = h.token.append_retirement_receipt(
+        &retiree,
+        &5,
+        &String::from_str(&h.env, "Acme Corp"),
+        &String::from_str(&h.env, "Q4 offset"),
+        &Some(approved_addr.clone()),
+    );
+    assert_eq!(h.token.retirement_count(), before_count + 2);
+    assert_eq!(receipt2.beneficiary_address, Some(approved_addr));
+}

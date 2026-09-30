@@ -32,6 +32,10 @@ pub enum CarbonError {
     InvalidAmount = 8,
     /// A metadata string field exceeds the 128-byte maximum allowed length.
     FieldTooLong = 9,
+    /// The optional beneficiary address provided to `append_retirement_receipt`
+    /// is not KYC-approved.  Every on-chain beneficiary address must belong to
+    /// an approved party so that the retirement audit trail remains trustworthy.
+    InvalidBeneficiaryAddress = 10,
 }
 
 #[contracttype]
@@ -560,6 +564,78 @@ impl CarbonCreditToken {
 
         env.events()
             .publish((symbol_short!("ret_obo"), retiree), on_behalf_of);
+        receipt
+    }
+
+    // ── Append retirement receipt (admin) ────────────────────────────────────
+
+    /// Append a manually-authored retirement receipt with an optional on-chain
+    /// beneficiary address.
+    ///
+    /// When `beneficiary_address` is `Some(addr)`, the address must be
+    /// KYC-approved — an unapproved or unrecognised address would pollute the
+    /// retirement audit trail and make later evidence checks untrustworthy.
+    ///
+    /// Returns `CarbonError::InvalidBeneficiaryAddress` when the optional
+    /// address is present but fails the KYC check.
+    pub fn append_retirement_receipt(
+        env: Env,
+        retiree: Address,
+        amount: i128,
+        beneficiary: String,
+        reason: String,
+        beneficiary_address: Option<Address>,
+    ) -> RetirementReceipt {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        th::require_admin(&env);
+
+        if amount <= 0 {
+            panic_with_error!(env, CarbonError::InvalidAmount);
+        }
+
+        Self::validate_metadata_field_length(&env, &beneficiary);
+        Self::validate_metadata_field_length(&env, &reason);
+
+        // Validate the optional beneficiary address before writing any state.
+        // An address that is not KYC-approved must be rejected: storing an
+        // unverified address in the retirement receipt would degrade the
+        // trustworthiness of the audit trail and could allow invalid metadata
+        // to persist permanently on-chain.
+        if let Some(ref addr) = beneficiary_address {
+            if th::get_kyc_state_of(&env, addr) != th::KycState::Approved {
+                panic_with_error!(env, CarbonError::InvalidBeneficiaryAddress);
+            }
+        }
+
+        let index: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::RetirementCount)
+            .unwrap_or(0);
+
+        let receipt = RetirementReceipt {
+            retiree: retiree.clone(),
+            amount,
+            timestamp: env.ledger().timestamp(),
+            beneficiary,
+            retirement_reason: reason,
+            beneficiary_address: beneficiary_address.clone(),
+        };
+        let key = DataKey::Receipt(index);
+        env.storage().persistent().set(&key, &receipt);
+        env.storage().persistent().extend_ttl(&key, THRESHOLD, BUMP);
+        env.storage()
+            .instance()
+            .set(&DataKey::RetirementCount, &(index + 1));
+
+        // Update the per-beneficiary index.
+        let ben = beneficiary_address
+            .as_ref()
+            .unwrap_or(&retiree);
+        Self::index_beneficiary_receipt(&env, ben, index);
+
+        env.events()
+            .publish((symbol_short!("app_rcpt"), retiree), amount);
         receipt
     }
 

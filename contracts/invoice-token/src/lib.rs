@@ -57,6 +57,11 @@ pub enum InvoiceError {
     LifecyclePaused = 19,
     /// Metadata field contains an invalid value (e.g. malformed ISIN or currency code).
     InvalidMetadata = 20,
+    /// Returned when `append_journal_entry` is called with an empty event tag.
+    /// Every journal entry must carry a meaningful non-empty tag so that the
+    /// lifecycle audit log remains inspectable and each entry can be identified
+    /// without ambiguity.
+    EmptyEventTag = 21,
 }
 
 // ── Lifecycle state machine ───────────────────────────────────────────────────
@@ -434,6 +439,53 @@ impl InvoiceToken {
     pub fn get_journal(env: Env, invoice_id: String) -> Vec<JournalEntry> {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         Self::read_journal(&env, &invoice_id)
+    }
+
+    /// Append a custom journal entry to an invoice's audit log.
+    ///
+    /// The `event_tag` must be a non-empty string that identifies the type of
+    /// event being recorded.  An empty tag is rejected before any state is
+    /// written so that the lifecycle journal always contains identifiable,
+    /// meaningful entries.
+    ///
+    /// Returns `InvoiceError::EmptyEventTag` when `event_tag` is empty.
+    pub fn append_journal_entry(env: Env, invoice_id: String, event_tag: String) {
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        th::require_admin(&env);
+        // Reject empty event tags before touching any state.  An entry with
+        // no tag cannot be identified during audit log inspection and reduces
+        // confidence in the lifecycle record.
+        if event_tag.len() == 0 {
+            panic_with_error!(env, InvoiceError::EmptyEventTag);
+        }
+        // Verify the invoice exists before writing.
+        if !env
+            .storage()
+            .persistent()
+            .has(&DataKey::InvoiceMeta(invoice_id.clone()))
+        {
+            panic_with_error!(env, InvoiceError::InvoiceNotFound);
+        }
+        let current_status = Self::read_status(&env, &invoice_id);
+        let entry = JournalEntry {
+            event_tag: event_tag.clone(),
+            from_status: current_status,
+            to_status: current_status,
+            ledger: env.ledger().sequence(),
+            timestamp: env.ledger().timestamp(),
+        };
+        let mut journal = Self::read_journal(&env, &invoice_id);
+        journal.push_back(entry);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Journal(invoice_id.clone()), &journal);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Journal(invoice_id.clone()),
+            THRESHOLD,
+            BUMP,
+        );
+        env.events()
+            .publish((symbol_short!("jrn_add"),), (invoice_id, event_tag));
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -1397,6 +1449,12 @@ impl InvoiceToken {
     }
 
     fn evaluate_transfer_kyc(env: &Env, from: &Address, to: &Address, amount: i128) {
+        if th::get_kyc_state_of(env, from) != th::KycState::Approved {
+            panic_with_error!(env, InvoiceError::KycNotApproved);
+        }
+        if th::get_kyc_state_of(env, to) != th::KycState::Approved {
+            panic_with_error!(env, InvoiceError::KycNotApproved);
+        }
         match th::evaluate_transfer_compliance(env, from, to, amount) {
             th::TransferDecision::Allow => {}
             th::TransferDecision::Deny(ref reason) => {
