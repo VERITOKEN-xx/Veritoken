@@ -148,6 +148,28 @@ describe("parseConfigJson — tierPolicies entry validation", () => {
   });
 });
 
+describe("parseConfigJson — empty rule sets", () => {
+  const json = (overrides: Record<string, unknown>) =>
+    JSON.stringify({
+      ...exportConfig(BASE_RULES, [], null, { label: "test", network: "testnet" }),
+      ...overrides,
+    });
+
+  it("rejects an empty tierPolicies array when a non-empty policy set is required", () => {
+    expect(parseConfigJson(json({}), { requireTierPolicies: true })).toEqual({
+      ok: false,
+      error: '"tierPolicies" must contain at least one policy.',
+    });
+    expect(parseConfigJson(json({})).ok).toBe(true);
+  });
+
+  it("rejects an empty riskConfig object", () => {
+    const result = parseConfigJson(json({ riskConfig: {} }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/riskConfig/);
+  });
+});
+
 describe("validateConfigForApply", () => {
   function makeConfig(overrides: Partial<ComplianceConfigExport["rules"]> = {}): ComplianceConfigExport {
     return exportConfig({ ...BASE_RULES, ...overrides } as ComplianceRules, [], null, {

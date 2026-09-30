@@ -111,7 +111,12 @@ export type ImportResult =
   | { ok: true; config: ComplianceConfigExport }
   | { ok: false; error: string };
 
-export function parseConfigJson(json: string): ImportResult {
+export interface ParseConfigOptions {
+  /** Reject imports whose tierPolicies list is empty. */
+  requireTierPolicies?: boolean;
+}
+
+export function parseConfigJson(json: string, opts: ParseConfigOptions = {}): ImportResult {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
@@ -139,6 +144,16 @@ export function parseConfigJson(json: string): ImportResult {
   }
   if (!Array.isArray(obj.tierPolicies)) {
     return { ok: false, error: 'Missing or invalid "tierPolicies" field.' };
+  }
+  if (opts.requireTierPolicies && obj.tierPolicies.length === 0) {
+    return { ok: false, error: '"tierPolicies" must contain at least one policy.' };
+  }
+  if (
+    typeof obj.riskConfig === "object" &&
+    obj.riskConfig !== null &&
+    Object.keys(obj.riskConfig).length === 0
+  ) {
+    return { ok: false, error: '"riskConfig" must be null or a non-empty object.' };
   }
 
   const rules = obj.rules as Record<string, unknown>;

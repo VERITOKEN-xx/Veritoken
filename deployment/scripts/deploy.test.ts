@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { parseContractIds } from "./deploy.ts";
+import { loadConfig, parseContractIds } from "./deploy.ts";
 
 describe("parseContractIds", () => {
   // ── Happy-path ──────────────────────────────────────────────────────────────
@@ -63,5 +63,24 @@ describe("parseContractIds", () => {
 
   it("rejects an empty string", () => {
     expect(() => parseContractIds("")).toThrow(/empty contract identifier/);
+  });
+});
+
+describe("loadConfig", () => {
+  const configWith = (name: unknown) =>
+    JSON.stringify({
+      schema_version: 1,
+      profile: "testnet",
+      contracts: [{ name, artifact: "a.wasm", env_key: "A", dependencies: [] }],
+    });
+
+  it("accepts a contract with a non-empty name", () => {
+    expect(loadConfig(configWith("kyc-registry")).contracts[0].name).toBe(
+      "kyc-registry"
+    );
+  });
+
+  it.each(["", "   ", undefined])("rejects blank contract name %j", (name) => {
+    expect(() => loadConfig(configWith(name))).toThrow(/non-empty name/);
   });
 });

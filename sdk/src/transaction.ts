@@ -61,7 +61,7 @@ export function buildContractTx(
       : new Account(SIM_SOURCE, "0");
 
   return new TransactionBuilder(account, {
-    fee: opts.fee ?? "100",
+    fee,
     networkPassphrase,
   })
     .addOperation(new Contract(contractId).call(method, ...args))
