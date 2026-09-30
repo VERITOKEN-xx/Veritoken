@@ -173,9 +173,9 @@ export function parseConfigJson(json: string, opts: ParseConfigOptions = {}): Im
   }
 
   for (let i = 0; i < obj.tierPolicies.length; i++) {
-    const error = tierPolicyEntryError(obj.tierPolicies[i]);
+    const error = tierPolicyEntryError(obj.tierPolicies[i], i);
     if (error) {
-      return { ok: false, error: `Invalid tierPolicies[${i}]: ${error}` };
+      return { ok: false, error };
     }
   }
 
@@ -183,19 +183,20 @@ export function parseConfigJson(json: string, opts: ParseConfigOptions = {}): Im
 }
 
 /** Returns a reason the entry is structurally malformed, or null if it is well-formed. */
-function tierPolicyEntryError(entry: unknown): string | null {
-  if (typeof entry !== "object" || entry === null) return "expected an object.";
+function tierPolicyEntryError(entry: unknown, i: number): string | null {
+  const prefix = `Invalid tierPolicies[${i}]`;
+  if (typeof entry !== "object" || entry === null) return `${prefix}: expected an object.`;
   const e = entry as Record<string, unknown>;
-  if (!Number.isInteger(e.fromTier)) return '"fromTier" must be an integer.';
-  if (!Number.isInteger(e.toTier)) return '"toTier" must be an integer.';
-  if (typeof e.policy !== "object" || e.policy === null) return 'missing or invalid "policy".';
+  if (!Number.isInteger(e.fromTier)) return `${prefix}: "fromTier" must be an integer.`;
+  if (!Number.isInteger(e.toTier)) return `${prefix}: "toTier" must be an integer.`;
+  if (typeof e.policy !== "object" || e.policy === null) return `${prefix}.policy is missing or not a valid policy object.`;
   const p = e.policy as Record<string, unknown>;
-  if (typeof p.blocked !== "boolean") return '"policy.blocked" must be a boolean.';
+  if (typeof p.blocked !== "boolean") return `${prefix}: "policy.blocked" must be a boolean.`;
   if (typeof p.max_transfer_amount !== "string" || !/^-?\d+$/.test(p.max_transfer_amount)) {
-    return '"policy.max_transfer_amount" must be a decimal string.';
+    return `${prefix}: "policy.max_transfer_amount" must be a decimal string.`;
   }
-  if (!Number.isInteger(p.min_from_tier)) return '"policy.min_from_tier" must be an integer.';
-  if (!Number.isInteger(p.min_to_tier)) return '"policy.min_to_tier" must be an integer.';
+  if (!Number.isInteger(p.min_from_tier)) return `${prefix}: "policy.min_from_tier" must be an integer.`;
+  if (!Number.isInteger(p.min_to_tier)) return `${prefix}: "policy.min_to_tier" must be an integer.`;
   return null;
 }
 
@@ -208,7 +209,7 @@ export function configToRules(config: ComplianceConfigExport): ComplianceRules {
     ["max_holding_period", r.max_holding_period],
   ] as const;
   for (const [field, value] of decimalFields) {
-    if (!/^\d+$/.test(value)) {
+    if (typeof value !== "string" || !/^\d+$/.test(value)) {
       throw new Error(`Invalid rules field "${field}": expected a non-negative decimal string.`);
     }
   }

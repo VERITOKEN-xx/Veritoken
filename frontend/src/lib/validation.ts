@@ -3,6 +3,8 @@
  * Checks for positive numbers, safe integer ranges, and decimal precision.
  */
 
+import { StrKey } from "@stellar/stellar-sdk";
+
 interface AmountValidationResult {
   isValid: boolean;
   error: string | null;
@@ -101,6 +103,32 @@ function computeAmountValidation(
       isValid: false,
       error: `Amount precision too high (exceeds ${decimals} decimal places)`,
     };
+  }
+
+  return { isValid: true, error: null };
+}
+
+interface AddressValidationResult {
+  isValid: boolean;
+  error: string | null;
+}
+
+/**
+ * Validate a wallet address before it is used in a contract call.
+ * Accepts only well-formed Stellar account public keys (G…, checksum verified).
+ * Surrounding whitespace, secret keys, contract IDs, and other malformed values
+ * are rejected so they never reach the action that consumes the address.
+ * @param walletAddress - The address string to validate
+ * @returns { isValid: boolean, error: string | null }
+ */
+export function validateAddress(walletAddress: string): AddressValidationResult {
+  // Empty values are invalid (error suppressed to avoid red text before typing)
+  if (typeof walletAddress !== "string" || walletAddress.trim() === "") {
+    return { isValid: false, error: null };
+  }
+
+  if (!StrKey.isValidEd25519PublicKey(walletAddress)) {
+    return { isValid: false, error: "Invalid Stellar wallet address" };
   }
 
   return { isValid: true, error: null };

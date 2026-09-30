@@ -78,6 +78,13 @@ describe("exportConfig / configToRules round-trip", () => {
     expect(() => configToRules(exported)).toThrow(/max_transfer_amount/);
   });
 
+  it("rejects a non-string max_transfer_amount value (e.g. a number from JSON)", () => {
+    const exported = exportConfig(BASE_RULES, [], null, { label: "test", network: "testnet" });
+    (exported.rules as unknown as Record<string, unknown>).max_transfer_amount = 5_000_000;
+
+    expect(() => configToRules(exported)).toThrow(/max_transfer_amount/);
+  });
+
   it("configToTierPolicies restores bigint amounts", () => {
     const exported = exportConfig(
       BASE_RULES,

@@ -216,6 +216,12 @@ impl RwaToken {
         compliance_metadata: Option<ComplianceMetadata>,
         max_supply: i128,
     ) {
+        // Reject empty or whitespace-only token metadata before any state is
+        // written (including the admin), so a nearly blank token definition
+        // can never reach wallets, front ends, or deployed registries.
+        if metadata::is_blank(&name) || metadata::is_blank(&symbol) {
+            panic_with_error!(env, RwaError::InvalidMetadata);
+        }
         // Reject an empty asset_type immediately — an empty string slips past
         // a naive length check and would persist as ambiguous contract state.
         // This guard runs before the known-values check so the error is always
