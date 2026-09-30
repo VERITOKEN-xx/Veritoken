@@ -42,6 +42,14 @@ export function buildContractTx(
   if ((source === undefined) !== (sequence === undefined)) {
     throw new Error("source and sequence must be provided together");
   }
+  if (
+    source !== undefined &&
+    (typeof source !== "string" ||
+      (!StrKey.isValidEd25519PublicKey(source) &&
+        !StrKey.isValidMed25519PublicKey(source)))
+  ) {
+    throw new Error("source must be a valid Stellar account address (G… or M…)");
+  }
 
   if (source !== undefined && !StrKey.isValidEd25519PublicKey(source)) {
     throw new Error("source must be a valid Stellar account address (G…)");

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { useAmountValidation } from "../validation";
+import { Keypair } from "@stellar/stellar-sdk";
+import { useAmountValidation, validateAddress } from "../validation";
 import { validateStellarAddress } from "../stellar";
 import { useAddressValidation } from "../useAddressValidation";
 
@@ -108,5 +109,30 @@ describe("useAddressValidation", () => {
     const result = useAddressValidation("not-an-address");
     expect(result.isValid).toBe(false);
     expect(result.error).toBeTruthy();
+  });
+});
+
+describe("validateAddress", () => {
+  const validAddress = Keypair.random().publicKey();
+
+  it("accepts a well-formed Stellar wallet address", () => {
+    expect(validateAddress(validAddress)).toEqual({ isValid: true, error: null });
+  });
+
+  it("returns invalid for an empty address with no error message", () => {
+    expect(validateAddress("")).toEqual({ isValid: false, error: null });
+    expect(validateAddress("   ")).toEqual({ isValid: false, error: null });
+  });
+
+  it.each([
+    ["malformed string", "not-an-address"],
+    ["surrounding whitespace", ` ${validAddress} `],
+    ["lowercase address", validAddress.toLowerCase()],
+    ["bad checksum", `${validAddress.slice(0, -1)}${validAddress.endsWith("A") ? "B" : "A"}`],
+    ["secret key", Keypair.random().secret()],
+  ])("rejects an invalid wallet address (%s)", (_label, walletAddress) => {
+    const result = validateAddress(walletAddress);
+    expect(result.isValid).toBe(false);
+    expect(result.error).toMatch(/invalid stellar wallet address/i);
   });
 });

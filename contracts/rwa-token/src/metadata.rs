@@ -67,7 +67,7 @@ pub fn write_asset_type(env: &Env, asset_type: String) {
         .set(&DataKey::AssetType, &asset_type);
 }
 
-fn is_blank(value: &String) -> bool {
+pub(crate) fn is_blank(value: &String) -> bool {
     let len = value.len() as usize;
     if len == 0 {
         return true;
