@@ -166,6 +166,23 @@ fn test_transfer_rejects_blank_kyc_reference() {
 }
 
 #[test]
+fn test_evaluate_transfer_kyc_rejects_unapproved_recipient() {
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.token.issue(&inv_id(&h.env), &alice, &1_000);
+
+    // carol has no KYC record — the fail-fast guard in evaluate_transfer_kyc
+    // must reject the missing KYC reference before the compliance engine runs.
+    let carol = Address::generate(&h.env);
+    assert_eq!(
+        h.token
+            .try_transfer(&inv_id(&h.env), &alice, &carol, &100),
+        Err(Ok(InvoiceError::KycNotApproved.into()))
+    );
+}
+
+#[test]
 fn test_transfer_blocked_after_due_date() {
     let h = setup();
     let alice = Address::generate(&h.env);
@@ -1565,6 +1582,30 @@ fn test_set_fee_recipient_rejects_zero_fee_schedule() {
     assert_eq!(h.token.get_fee_recipient_role(), None);
 }
 
+// Fix — set_fee_recipient: reject zero transfer fee (#850)
+// Before the guard, set_fee_recipient could be called even when every invoice
+// has transfer_fee_bps == 0, storing a role address that would never receive
+// fees.  The fix checks has_positive_transfer_fee before any state is written.
+#[test]
+fn test_set_fee_recipient_rejected_when_all_invoices_have_zero_fee() {
+    let h = setup();
+    let addr = Address::generate(&h.env);
+    h.approve_kyc(&addr);
+
+    // Default setup has one invoice with transfer_fee_bps = 0 — must be rejected.
+    assert_eq!(
+        h.token.try_set_fee_recipient(&addr),
+        Err(Ok(InvoiceError::InvalidMetadata.into()))
+    );
+    assert_eq!(h.token.get_fee_recipient_role(), None);
+
+    // After adding an invoice with a positive fee, the call must succeed.
+    h.token
+        .create_invoice(&make_fee_invoice(&h.env, "FEE-ENABLE-850", None));
+    h.token.set_fee_recipient(&addr);
+    assert_eq!(h.token.get_fee_recipient_role(), Some(addr));
+}
+
 // ── Redemption arithmetic tests ───────────────────────────────────────────────
 
 #[test]
@@ -2019,4 +2060,36 @@ fn test_create_invoice_non_empty_id_accepted() {
     let h = setup();
     h.token.create_invoice(&h.make_invoice("VALID-ID"));
     assert_eq!(h.token.list_invoices(&0, &50).len(), 2);
+}
+
+// Fix #847 — append_journal_entry: reject empty event tags
+// Before the fix, there was no public append_journal_entry entry point.
+// A journal entry recorded without a meaningful tag would make the lifecycle
+// audit log harder to inspect and would reduce confidence in the audit record.
+// The new function requires a non-empty event_tag and panics with
+// EmptyEventTag before any state is written when the string is empty.
+#[test]
+fn test_append_journal_entry_rejects_empty_event_tag() {
+    use crate::InvoiceError;
+    use soroban_sdk::Error;
+
+    let h = setup();
+    let id = inv_id(&h.env);
+    let empty_tag = String::from_str(&h.env, "");
+
+    // An empty event tag must be rejected — journal length must not change.
+    let before_len = h.token.get_journal(&id).len();
+    assert_eq!(
+        h.token.try_append_journal_entry(&id, &empty_tag),
+        Err(Ok(Error::from(InvoiceError::EmptyEventTag)))
+    );
+    assert_eq!(h.token.get_journal(&id).len(), before_len);
+
+    // Normal path: a non-empty event tag must be accepted and appended.
+    let tag = String::from_str(&h.env, "compliance_review_passed");
+    h.token.append_journal_entry(&id, &tag);
+    let journal = h.token.get_journal(&id);
+    assert_eq!(journal.len(), before_len + 1);
+    let entry = journal.get(journal.len() - 1).expect("last entry");
+    assert_eq!(entry.event_tag, tag);
 }

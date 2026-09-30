@@ -78,6 +78,13 @@ describe("exportConfig / configToRules round-trip", () => {
     expect(() => configToRules(exported)).toThrow(/max_transfer_amount/);
   });
 
+  it("rejects a non-string max_transfer_amount value (e.g. a number from JSON)", () => {
+    const exported = exportConfig(BASE_RULES, [], null, { label: "test", network: "testnet" });
+    (exported.rules as unknown as Record<string, unknown>).max_transfer_amount = 5_000_000;
+
+    expect(() => configToRules(exported)).toThrow(/max_transfer_amount/);
+  });
+
   it("configToTierPolicies restores bigint amounts", () => {
     const exported = exportConfig(
       BASE_RULES,
@@ -138,6 +145,28 @@ describe("parseConfigJson — tierPolicies entry validation", () => {
     const result = parseConfigJson(jsonWithEntries([entry]));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(pattern);
+  });
+});
+
+describe("parseConfigJson — empty rule sets", () => {
+  const json = (overrides: Record<string, unknown>) =>
+    JSON.stringify({
+      ...exportConfig(BASE_RULES, [], null, { label: "test", network: "testnet" }),
+      ...overrides,
+    });
+
+  it("rejects an empty tierPolicies array when a non-empty policy set is required", () => {
+    expect(parseConfigJson(json({}), { requireTierPolicies: true })).toEqual({
+      ok: false,
+      error: '"tierPolicies" must contain at least one policy.',
+    });
+    expect(parseConfigJson(json({})).ok).toBe(true);
+  });
+
+  it("rejects an empty riskConfig object", () => {
+    const result = parseConfigJson(json({ riskConfig: {} }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/riskConfig/);
   });
 });
 

@@ -201,6 +201,33 @@ fn test_constructor_rejects_blank_symbol() {
 }
 
 #[test]
+#[should_panic]
+fn test_constructor_rejects_empty_symbol() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let kyc_id = env.register(KycRegistry, ());
+    KycRegistryClient::new(&env, &kyc_id).initialize(&admin);
+    let compliance_id = env.register(ComplianceEngine, ());
+    ComplianceEngineClient::new(&env, &compliance_id).initialize(&admin, &kyc_id, &0u64);
+
+    env.register(
+        RwaToken,
+        (
+            admin,
+            7u32,
+            String::from_str(&env, "Veritoken RWA"),
+            String::from_str(&env, ""),
+            String::from_str(&env, "property"),
+            kyc_id,
+            compliance_id,
+            Option::<ComplianceMetadata>::None,
+            0i128,
+        ),
+    );
+}
+
+#[test]
 fn test_mint_requires_kyc() {
     let h = setup();
     let user = Address::generate(&h.env);

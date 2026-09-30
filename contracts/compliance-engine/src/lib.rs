@@ -83,6 +83,16 @@ pub enum ComplianceError {
     /// Holder timestamps must be positive Unix timestamps.
     InvalidHolderSince = 14,
     InvalidTierPolicy = 15,
+    /// Returned when `deny_transfer` is called with an empty evaluation reason.
+    /// Every manual transfer denial must carry a non-empty human-readable
+    /// reason so that the compliance audit trail remains meaningful and
+    /// debugging is possible.
+    EmptyEvaluationReason = 16,
+    /// Returned when `append_policy_record` is called with an empty governance
+    /// comment.  Every admin-initiated policy log entry must carry a
+    /// human-readable description so that the audit trail is interpretable
+    /// after the fact.
+    EmptyGovernanceComment = 17,
 }
 
 // ── Tier policy types ─────────────────────────────────────────────────────────
@@ -290,7 +300,7 @@ impl ComplianceEngine {
             .instance()
             .set(&DataKey::MigrationCount, &0u32);
         // Record version 0 — the initial policy.
-        Self::append_policy_record(
+        Self::write_policy_record(
             &env,
             default_rules,
             PolicyChangeKind::ImmediateRuleUpdate,
@@ -376,7 +386,7 @@ impl ComplianceEngine {
             .instance()
             .set(&DataKey::Rules, &proposal.rules);
         env.storage().instance().remove(&DataKey::PendingProposal);
-        Self::append_policy_record(
+        Self::write_policy_record(
             &env,
             proposal.rules,
             PolicyChangeKind::DelayedRuleActivation,
@@ -391,7 +401,7 @@ impl ComplianceEngine {
         Self::validate_rules(&env, &rules);
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         env.storage().instance().set(&DataKey::Rules, &rules);
-        Self::append_policy_record(
+        Self::write_policy_record(
             &env,
             rules,
             PolicyChangeKind::ImmediateRuleUpdate,
@@ -426,7 +436,7 @@ impl ComplianceEngine {
             .expect("rules must be set");
         rules.paused = true;
         env.storage().instance().set(&DataKey::Rules, &rules);
-        Self::append_policy_record(
+        Self::write_policy_record(
             &env,
             rules,
             PolicyChangeKind::Pause,
@@ -445,7 +455,7 @@ impl ComplianceEngine {
             .expect("rules must be set");
         rules.paused = false;
         env.storage().instance().set(&DataKey::Rules, &rules);
-        Self::append_policy_record(
+        Self::write_policy_record(
             &env,
             rules,
             PolicyChangeKind::Unpause,
@@ -488,7 +498,7 @@ impl ComplianceEngine {
             .instance()
             .get(&DataKey::Rules)
             .expect("rules must be set");
-        Self::append_policy_record(
+        Self::write_policy_record(
             &env,
             rules,
             PolicyChangeKind::BlocklistAdd,
@@ -552,7 +562,7 @@ impl ComplianceEngine {
             .instance()
             .get(&DataKey::Rules)
             .expect("rules must be set");
-        Self::append_policy_record(
+        Self::write_policy_record(
             &env,
             rules,
             PolicyChangeKind::BlocklistRemove,
@@ -644,7 +654,7 @@ impl ComplianceEngine {
                 .instance()
                 .get(&DataKey::Rules)
                 .expect("rules must be set");
-            Self::append_policy_record(
+            Self::write_policy_record(
                 &env,
                 rules,
                 PolicyChangeKind::AllowlistAdd,
@@ -709,7 +719,7 @@ impl ComplianceEngine {
             .instance()
             .get(&DataKey::Rules)
             .expect("rules must be set");
-        Self::append_policy_record(
+        Self::write_policy_record(
             &env,
             rules,
             PolicyChangeKind::AllowlistRemove,
@@ -818,6 +828,54 @@ impl ComplianceEngine {
         amount: i128,
     ) -> TransferDecision {
         Self::evaluate_transfer_inner(&env, &from, &to, amount, true)
+    }
+
+    /// Explicitly deny a transfer and record the denial reason on-chain.
+    ///
+    /// This entry point is used when an admin or compliance officer needs to
+    /// manually log a transfer refusal with a human-readable explanation.
+    /// An empty `reason` is rejected before any state is written so that the
+    /// compliance audit trail always contains actionable information.
+    ///
+    /// Returns `ComplianceError::EmptyEvaluationReason` when `reason` is empty.
+    pub fn deny_transfer(env: Env, from: Address, to: Address, amount: i128, reason: String) {
+        Self::require_admin(&env);
+        // Reject empty reasons before touching any state.  A blank reason
+        // makes debugging impossible and produces a compliance record with no
+        // human-readable context — the audit trail entry would be effectively
+        // useless.
+        if reason.len() == 0 {
+            panic_with_error!(env, ComplianceError::EmptyEvaluationReason);
+        }
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        env.events()
+            .publish((symbol_short!("deny_xfr"),), (from, to, amount, reason));
+    }
+
+    /// Append a governance comment to the policy history.
+    ///
+    /// This entry point is used when an admin needs to record a free-form
+    /// governance note alongside the current rule snapshot.  An empty
+    /// `comment` is rejected before any state is written so that the policy
+    /// audit trail only contains entries with actionable context.
+    ///
+    /// Returns `ComplianceError::EmptyGovernanceComment` when `comment` is empty.
+    pub fn append_policy_record(env: Env, comment: String) {
+        Self::require_admin(&env);
+        // Reject blank comments before touching any state.  A blank
+        // governance comment makes the policy audit trail hard to interpret
+        // and cannot support a clear narrative for later reviews.
+        if comment.len() == 0 {
+            panic_with_error!(env, ComplianceError::EmptyGovernanceComment);
+        }
+        env.storage().instance().extend_ttl(THRESHOLD, BUMP);
+        let rules: ComplianceRules = env
+            .storage()
+            .instance()
+            .get(&DataKey::Rules)
+            .expect("rules must be set");
+        Self::write_policy_record(&env, rules, PolicyChangeKind::ImmediateRuleUpdate, comment);
+        env.events().publish((symbol_short!("pol_note"),), ());
     }
 
     /// Deterministic evaluation core.
@@ -1608,7 +1666,7 @@ impl ComplianceEngine {
     }
 
     /// Single write path for policy history.  Every ruleset mutation calls this.
-    fn append_policy_record(
+    fn write_policy_record(
         env: &Env,
         rules: ComplianceRules,
         change_kind: PolicyChangeKind,
