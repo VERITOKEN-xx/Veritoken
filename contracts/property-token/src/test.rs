@@ -1884,3 +1884,215 @@ fn test_959_holder_count_and_is_holder_remain_accurate_independent_of_get_holder
     // get_holders is still empty.
     assert_eq!(h.token.get_holders(&0, &50).len(), 0);
 }
+
+// ── Double-claim prevention tests ────────────────────────────────────────────
+//
+// A holder must not be able to debit the dividend pool a second time for the
+// same distribution.  After a successful claim, the holder checkpoint is
+// zeroed; a second claim with no intervening deposit must be a no-op (returns
+// an error for claim_dividend, returns 0 for the typed variants) and must
+// leave accounting state identical to what it was right after the first claim.
+
+#[test]
+fn test_double_claim_dividend_second_call_is_error() {
+    // Mint shares, deposit one distribution, then claim twice.
+    // The first claim must succeed and return the holder's full entitlement.
+    // The second claim must return an error because unclaimed_total is now 0
+    // and claim_dividend panics on a zero amount (InvalidDividendAmount).
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    // Alice holds 400 out of 1 000 total shares.
+    h.token.mint(&alice, &400);
+
+    // Deposit 1 000 stroops (type Other). Alice's entitlement: 400 stroops.
+    h.token.deposit_dividend(&1_000, &2);
+
+    // --- First claim ---
+    let first = h.token.claim_dividend(&alice);
+    assert_eq!(first, 400, "first claim must equal the holder's full entitlement");
+
+    // Pool must have decreased by exactly the claimed amount.
+    let pool_after_first = h.token.dividend_pool();
+
+    // Checkpoint must show zero pending after the first claim.
+    assert_eq!(
+        h.token.pending_dividend(&alice),
+        0,
+        "pending must be zero immediately after claim"
+    );
+    let cp_after_first = h.token.holder_dividend_checkpoint(&alice);
+    assert_eq!(cp_after_first.unclaimed_total, 0);
+    assert_eq!(
+        cp_after_first.claimed_scaled,
+        400,
+        "claimed_scaled must equal the amount paid out"
+    );
+
+    // --- Second claim — no new distribution has been deposited ---
+    // claim_dividend panics (InvalidDividendAmount) when unclaimed_total == 0.
+    let second = h.token.try_claim_dividend(&alice);
+    assert!(
+        second.is_err(),
+        "second claim with no new distribution must return an error, not pay out again"
+    );
+
+    // Pool and checkpoint must be unchanged relative to their post-first-claim state.
+    assert_eq!(
+        h.token.dividend_pool(),
+        pool_after_first,
+        "dividend pool must not be debited by the failed second claim"
+    );
+    assert_eq!(
+        h.token.pending_dividend(&alice),
+        0,
+        "pending must still be zero after failed second claim"
+    );
+    let cp_after_second = h.token.holder_dividend_checkpoint(&alice);
+    assert_eq!(
+        cp_after_second.unclaimed_total,
+        0,
+        "unclaimed_total must remain zero after failed second claim"
+    );
+    assert_eq!(
+        cp_after_second.claimed_scaled,
+        400,
+        "claimed_scaled must not change after failed second claim"
+    );
+}
+
+#[test]
+fn test_double_claim_typed_second_call_returns_zero() {
+    // Typed claim helpers (claim_rent_yield / claim_capital_return) return 0
+    // rather than panicking when the typed unclaimed balance is already zero.
+    // Verify that a second call does not debit the pool a second time.
+    let h = setup();
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.token.mint(&alice, &600);
+
+    // Deposit 1 000 as Rent (type 0) and 1 000 as Capital (type 1).
+    h.token.deposit_dividend(&1_000, &0);
+    h.token.deposit_dividend(&1_000, &1);
+
+    // First rent claim: 60 % of 1 000 = 600.
+    let rent_first = h.token.claim_rent_yield(&alice);
+    assert_eq!(rent_first, 600);
+
+    // First capital claim: 60 % of 1 000 = 600.
+    let cap_first = h.token.claim_capital_return(&alice);
+    assert_eq!(cap_first, 600);
+
+    let pool_after_claims = h.token.dividend_pool();
+
+    // --- Second typed claims with no new distribution ---
+    let rent_second = h.token.claim_rent_yield(&alice);
+    assert_eq!(rent_second, 0, "second rent claim must return 0, not pay out again");
+
+    let cap_second = h.token.claim_capital_return(&alice);
+    assert_eq!(cap_second, 0, "second capital claim must return 0, not pay out again");
+
+    // Pool must be exactly the same as after the first round of claims.
+    assert_eq!(
+        h.token.dividend_pool(),
+        pool_after_claims,
+        "pool must not be debited by the zero second claims"
+    );
+
+    // Checkpoint must show all typed balances still at zero.
+    let cp = h.token.holder_dividend_checkpoint(&alice);
+    assert_eq!(cp.unclaimed_total, 0);
+    assert_eq!(cp.unclaimed_rent, 0);
+    assert_eq!(cp.unclaimed_capital, 0);
+    // claimed_scaled accumulates the total paid out across all claim calls.
+    assert_eq!(
+        cp.claimed_scaled,
+        1_200,
+        "claimed_scaled must equal the sum of all successful payouts"
+    );
+}
+
+// ── Fixed-point conservation tests ───────────────────────────────────────────
+//
+// Every deposit must satisfy the conservation equation:
+//   allocated_amount + dust_reserve_delta == amount
+//
+// where allocated_amount = per_share_scaled * total_shares / SCALE_FACTOR
+// and   dust_reserve_delta = amount - allocated_amount.
+//
+// Two cases are tested: one where the deposit divides evenly (no remainder)
+// and one where SCALE_FACTOR truncation leaves a non-zero dust remainder.
+
+#[test]
+fn test_fixed_point_exact_division_conservation() {
+    // Choose shares and amount so that (amount * SCALE_FACTOR) is evenly
+    // divisible by total_shares, producing zero dust.
+    //
+    // total_shares = 4, deposit = 100
+    // per_share_scaled = (100 * 10_000_000) / 4 = 250_000_000  (exact)
+    // allocated_amount = 250_000_000 * 4 / 10_000_000 = 100     (exact)
+    // dust = 100 - 100 = 0
+    let h = setup_with_shares(4);
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.token.mint(&alice, &4);
+
+    h.token.deposit_dividend(&100, &2);
+
+    let cp = h.token.get_distribution(&0).unwrap();
+
+    // Verify the conservation equation using only integer assertions.
+    assert_eq!(
+        cp.allocated_amount + h.token.dust_reserve(),
+        cp.amount,
+        "allocated_amount + dust must equal the deposited amount (exact-division case)"
+    );
+    assert_eq!(cp.allocated_amount, 100, "full amount must be allocated when division is exact");
+    assert_eq!(h.token.dust_reserve(), 0, "dust reserve must be zero for exact division");
+
+    // Alice holds all shares and must receive the full deposit.
+    assert_eq!(h.token.pending_dividend(&alice), 100);
+}
+
+#[test]
+fn test_fixed_point_remainder_conservation() {
+    // Choose shares and amount so that (amount * SCALE_FACTOR) is NOT evenly
+    // divisible by total_shares, producing a non-zero dust remainder.
+    //
+    // total_shares = 3, deposit = 10
+    // per_share_scaled = floor(10 * 10_000_000 / 3) = floor(33_333_333.33) = 33_333_333
+    // allocated_amount = 33_333_333 * 3 / 10_000_000 = 9  (truncated)
+    // dust = 10 - 9 = 1
+    let h = setup_with_shares(3);
+    let alice = Address::generate(&h.env);
+    h.approve_kyc(&alice);
+    h.token.mint(&alice, &3);
+
+    h.token.deposit_dividend(&10, &2);
+
+    let cp = h.token.get_distribution(&0).unwrap();
+
+    // Conservation equation must hold with integer assertions only.
+    assert_eq!(
+        cp.allocated_amount + h.token.dust_reserve(),
+        cp.amount,
+        "allocated_amount + dust must equal the deposited amount (remainder case)"
+    );
+    assert_eq!(
+        cp.allocated_amount,
+        9,
+        "allocated_amount must be floor(per_share_scaled * total_shares / SCALE_FACTOR)"
+    );
+    assert_eq!(
+        h.token.dust_reserve(),
+        1,
+        "remainder must be carried to dust reserve, not silently dropped"
+    );
+
+    // Alice (all 3 shares) receives the allocated portion, not the raw deposit.
+    assert_eq!(
+        h.token.pending_dividend(&alice),
+        9,
+        "holder entitlement must equal allocated_amount, not the raw deposit"
+    );
+}
