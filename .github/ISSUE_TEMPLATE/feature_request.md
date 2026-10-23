@@ -12,5 +12,18 @@ assignees: ''
 ## Proposed Implementation Solution or API Design Layout
 <!-- Detail the proposed implementation solution or API design layout. -->
 
+## Implementation Steps
+<!-- List the concrete, ordered steps needed to deliver this feature.
+     Each step should be small enough to review independently.
+     Example: "1. Add `foo` field to StorageKey enum. 2. Update deposit_dividend to write foo. 3. Expose get_foo query method." -->
+
+## Acceptance Criteria
+<!-- State the specific, measurable conditions that must be true for this feature to be considered complete.
+     Example: "Calling get_foo after deposit returns the deposited value; calling it before any deposit returns 0." -->
+
+## Scope Exclusions
+<!-- List anything explicitly out of scope for this request to keep the change bounded.
+     Example: "Migration of existing on-chain state is a separate follow-up." -->
+
 ## Alternative Approaches or Workarounds Evaluated
 <!-- List any alternative approaches or workarounds you've evaluated. -->
