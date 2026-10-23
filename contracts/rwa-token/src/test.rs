@@ -797,6 +797,8 @@ fn test_batch_transfer_two_recipients_success() {
 
 #[test]
 fn test_batch_transfer_state_unchanged_on_kyc_failure() {
+    use crate::RwaError;
+
     let h = setup();
     let alice = Address::generate(&h.env);
     let bob = Address::generate(&h.env);
@@ -816,7 +818,13 @@ fn test_batch_transfer_state_unchanged_on_kyc_failure() {
             amount: 200,
         }, // fails here
     ];
-    assert!(h.token.try_batch_transfer(&alice, &recipients).is_err());
+    assert_eq!(
+        h.token
+            .try_batch_transfer(&alice, &recipients)
+            .unwrap_err()
+            .unwrap(),
+        Error::from(RwaError::KycNotApproved)
+    );
 
     // No state changes: balances untouched
     assert_eq!(h.token.balance(&alice), 1_000);
@@ -1052,7 +1060,9 @@ fn test_batch_transfer_rejects_cumulative_holder_limit_without_state_change() {
 }
 
 #[test]
-fn test_batch_transfer_counts_duplicate_recipient_once_for_holder_limit() {
+fn test_batch_transfer_duplicate_recipient_entries_apply_sequentially() {
+    use soroban_sdk::{symbol_short, testutils::Events as _, TryFromVal};
+
     let h = setup();
     let alice = Address::generate(&h.env);
     let bob = Address::generate(&h.env);
@@ -1077,6 +1087,33 @@ fn test_batch_transfer_counts_duplicate_recipient_once_for_holder_limit() {
     assert_eq!(h.token.balance(&alice), 750);
     assert_eq!(h.token.balance(&bob), 250);
     assert_eq!(h.compliance.holder_count(), 2);
+
+    let mut transfer_amounts = soroban_sdk::Vec::<i128>::new(&h.env);
+    let mut transfer_recipients = soroban_sdk::Vec::<Address>::new(&h.env);
+    for (_, topics, data) in h.env.events().all().iter() {
+        if topics.len() != 3 {
+            continue;
+        }
+        let topic: soroban_sdk::Symbol =
+            TryFromVal::try_from_val(&h.env, &topics.get(0).unwrap()).unwrap();
+        if topic != symbol_short!("transfer") {
+            continue;
+        }
+        let from: Address = TryFromVal::try_from_val(&h.env, &topics.get(1).unwrap()).unwrap();
+        if from != alice {
+            continue;
+        }
+        let to: Address = TryFromVal::try_from_val(&h.env, &topics.get(2).unwrap()).unwrap();
+        let (amount, _): (i128, u64) = TryFromVal::try_from_val(&h.env, &data).unwrap();
+        transfer_recipients.push_back(to);
+        transfer_amounts.push_back(amount);
+    }
+
+    assert_eq!(transfer_amounts.len(), 2);
+    assert_eq!(transfer_recipients.get(0), Some(bob.clone()));
+    assert_eq!(transfer_recipients.get(1), Some(bob));
+    assert_eq!(transfer_amounts.get(0), Some(100));
+    assert_eq!(transfer_amounts.get(1), Some(150));
 }
 
 #[test]
