@@ -19,6 +19,7 @@ env:
 #  frontend-build  — TypeScript type-check + Vite build
 #  frontend-test   — Vitest unit tests
 #  drift-check     — env drift detection (requires deployed manifest)
+#  release-version — contract crate versions match the CHANGELOG release version
 #
 #  All rust-* jobs share a single Cargo cache keyed on Cargo.lock.
 #  frontend-* jobs share a Node module cache keyed on package-lock.json.
@@ -276,3 +277,20 @@ jobs:
             exit 0
           fi
           bash scripts/check-drift.sh --check-only
+
+  # ── Release version consistency ─────────────────────────────────────────────
+  # Fails when any contracts/*/Cargo.toml version differs from the newest
+  # released CHANGELOG.md heading, so a mismatch is caught before tagging.
+  release-version:
+    name: "Release · version consistency"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check-script fixture tests
+        shell: bash
+        run: bash scripts/tests/check-release-version.test.sh
+
+      - name: Check contract versions against CHANGELOG.md
+        shell: bash
+        run: bash scripts/check-release-version.sh

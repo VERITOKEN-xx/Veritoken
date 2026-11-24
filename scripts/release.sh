@@ -76,6 +76,9 @@ done
 echo "--- Updating Cargo.lock..."
 cargo update --workspace --quiet
 
+# Confirm every contract crate now carries the release version
+bash scripts/check-release-version.sh "$VERSION"
+
 # ── Generate changelog entry ──────────────────────────────────────────────────
 
 TODAY=$(date -u +%Y-%m-%d)
