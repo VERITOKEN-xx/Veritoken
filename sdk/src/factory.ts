@@ -138,7 +138,7 @@ export function createClients(config: CreateClientsConfig): Partial<ClientMap> {
   for (const key of Object.keys(CTORS) as ClientKey[]) {
     const override = config.overrides?.[key];
     if (override) {
-      const overrideId = (override as { contractId?: unknown }).contractId;
+      const overrideId = (override as unknown as { contractId?: unknown }).contractId;
       if (typeof overrideId === "string" && overrideId.trim() === "") {
         throw new Error(`overrides.${key} has a blank contractId — supply a valid contract ID or omit the override.`);
       }

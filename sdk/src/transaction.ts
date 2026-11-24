@@ -9,6 +9,7 @@ import {
   Contract,
   Keypair,
   Memo,
+  StrKey,
   TransactionBuilder,
   type xdr,
 } from "@stellar/stellar-sdk";
@@ -53,6 +54,10 @@ export function buildContractTx(
 
   if (source !== undefined && !StrKey.isValidEd25519PublicKey(source)) {
     throw new Error("source must be a valid Stellar account address (G…)");
+  }
+  const fee = opts.fee ?? "100";
+  if (!/^\d+$/.test(fee) || BigInt(fee) <= 0n) {
+    throw new Error("fee must be a positive integer string");
   }
 
   const account =

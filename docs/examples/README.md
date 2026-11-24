@@ -33,11 +33,24 @@ writes; the examples below follow the same pattern in each language.
 | [`python_example.py`](python_example.py) | Python 3.10+ | `python python_example.py` |
 | [`javascript_example.js`](javascript_example.js) | JavaScript (Node.js) | `node javascript_example.js` |
 | [`sdk_client_factory_example.ts`](sdk_client_factory_example.ts) | TypeScript (`@veritoken/sdk`) | `npx tsx docs/examples/sdk_client_factory_example.ts` |
+| [`sdk_health_check_example.ts`](sdk_health_check_example.ts) | TypeScript (`@veritoken/sdk`) | `npx tsx docs/examples/sdk_health_check_example.ts` |
 
 The TypeScript example additionally shows the SDK's client factory and
 dependency-injection pattern (`createClients` / `ClientFactory`) — composing
 several contract clients from one config object, and swapping in a mock
 client for tests without touching a real or simulated RPC endpoint.
+
+## Contract health check
+
+[`sdk_health_check_example.ts`](sdk_health_check_example.ts) is read-only (no
+wallet, signing, or funded account). It calls each configured client's
+`health(opts?)` and the base `checkHealth(server, contractId, opts?)`, then
+maps the result to `operational` / `degraded` / `unavailable` for a status
+page. A health result is a snapshot taken at `checkedAt`. It is not a promise
+that a later transaction will succeed. For a broader example, see the frontend
+status page at
+[`frontend/src/pages/StatusPage.tsx`](../../frontend/src/pages/StatusPage.tsx)
+(route `/status`).
 
 ## Carbon retirement receipt lookup
 
