@@ -65,6 +65,7 @@ to attribute; the full suite is the final gate, not the first step.
 | Frontend | `npm test` in `frontend/` (or `npx vitest run <file>` for one file) | None |
 | SDK | `npm test` in `sdk/` | None |
 | Deployment scripts | `bash -n` on changed scripts (see [Shell script checks](#shell-script-checks)) | None |
+| Integration fixture plans, runner, and transport | `npm run test:unit` in `tests/integration/` (see the [integration fixture guide](tests/integration/README.md)) | `npm install` in `tests/integration/`; no local node, Docker, or built WASMs |
 | Lifecycle against a local node | `npm run test:lifecycle` in `tests/integration/` | Docker, local Soroban node, built WASMs |
 | Browser workflows | `npm test` in `tests/e2e/` | Docker, built WASMs |
 
@@ -87,6 +88,7 @@ prove deployment readiness.
 | `cargo test --features testutils` | Deployment scripts that submit transactions (funded Stellar identity, network access) |
 | `npm run build` / `npm run lint` in `frontend/` | Anything pointed at testnet or a remote RPC endpoint |
 | `npm test` in `sdk/` and `frontend/` | |
+| `npm run test:unit` in `tests/integration/` | |
 | `bash -n` on shell scripts | |
 
 Deployment and lifecycle exercises are documented in

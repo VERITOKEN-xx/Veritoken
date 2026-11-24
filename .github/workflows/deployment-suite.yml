@@ -62,6 +62,10 @@ jobs:
           bash -n scripts/deploy.sh
           bash -n scripts/verify-deployment.sh
           bash -n scripts/check-drift.sh
+          # Legacy direct-deploy script (name is a historical typo of
+          # "deployer"). Nothing calls it, but it stays tracked, so keep it
+          # syntax-checked until it is removed or renamed.
+          bash -n scripts/depolyer.sh
 
   typescript-tests:
     name: Deployment TypeScript tests
