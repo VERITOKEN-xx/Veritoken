@@ -1,6 +1,8 @@
 #![cfg(test)]
 
-use crate::{CarbonCreditToken, CarbonCreditTokenClient, ProjectMeta, RetirementRequest};
+use crate::{
+    CarbonCreditToken, CarbonCreditTokenClient, CarbonError, ProjectMeta, RetirementRequest,
+};
 use compliance_engine::{ComplianceEngine, ComplianceEngineClient};
 use kyc_registry::{KycRegistry, KycRegistryClient};
 use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env, String};
@@ -411,6 +413,52 @@ fn test_retire_over_balance_fails_without_receipt() {
 
     assert!(result.is_err());
     assert_eq!(h.token.balance(&alice), 7);
+    assert_eq!(h.token.total_retired(), 0);
+    assert_eq!(h.token.retirement_count(), 0);
+    assert_eq!(h.token.get_receipts(&0, &10).len(), 0);
+}
+
+#[test]
+fn test_retire_by_non_holder_does_not_consume_other_holders_credits() {
+    // A caller with no credits must not be able to retire (burn) credits that
+    // belong to another holder. Retirement authorization and balance
+    // accounting are applied to the caller's own holdings, so an over-balance
+    // request fails atomically with InsufficientBalance — the other holder's
+    // balance and the global receipt history are left completely unchanged.
+    let h = setup();
+    let holder = Address::generate(&h.env);
+    let non_holder = Address::generate(&h.env);
+    h.approve_kyc(&holder);
+    h.approve_kyc(&non_holder);
+
+    // holder owns a positive balance; non_holder owns none.
+    h.token.mint(&holder, &100);
+    assert_eq!(h.token.balance(&holder), 100);
+    assert_eq!(h.token.balance(&non_holder), 0);
+
+    // non_holder attempts to retire more than their (zero) balance.
+    let result = h.token.try_retire(
+        &non_holder,
+        &10,
+        &String::from_str(&h.env, "Acme Corp"),
+        &String::from_str(&h.env, "offset claim"),
+    );
+
+    // Rejected against the caller's own balance, not any other holder's.
+    // The `try_` wrapper returns `RetirementReceipt` on success (which is not
+    // `PartialEq`), so assert the specific guard via a match rather than an
+    // `assert_eq!` on the whole result.
+    assert!(result.is_err());
+    match result {
+        Err(Ok(e)) => assert_eq!(e, CarbonError::InsufficientBalance.into()),
+        _ => panic!("expected InsufficientBalance contract error"),
+    }
+
+    // No partial accounting effect: the other holder's credits are untouched
+    // and no retirement receipt or ledger counter was created.
+    assert_eq!(h.token.balance(&holder), 100);
+    assert_eq!(h.token.balance(&non_holder), 0);
+    assert_eq!(h.token.total_supply(), 100);
     assert_eq!(h.token.total_retired(), 0);
     assert_eq!(h.token.retirement_count(), 0);
     assert_eq!(h.token.get_receipts(&0, &10).len(), 0);
