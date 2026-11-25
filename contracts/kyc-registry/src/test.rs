@@ -923,6 +923,45 @@ fn test_approve_batch_rejects_empty_subjects() {
     assert_eq!(res, Err(Ok(Error::from(KycError::EmptyBatch))));
 }
 
+/// An empty `approve_batch` from an *authorized* verifier is a rejected
+/// request (`EmptyBatch`), not a successful no-op. Nothing is written: no
+/// verifier-log entry, no verifier→subject index entry, and no `batch_app`
+/// event.
+#[test]
+fn test_approve_batch_empty_from_authorized_verifier_writes_nothing() {
+    let (env, client, admin) = setup();
+    let verifier = Address::generate(&env);
+    client.add_verifier(&admin, &verifier);
+    let subjects: Vec<(Address, u32, u64, String)> = Vec::new(&env);
+
+    let res = client.try_approve_batch(&verifier, &subjects);
+    assert_eq!(res, Err(Ok(Error::from(KycError::EmptyBatch))));
+
+    // No approval was recorded anywhere for this verifier.
+    assert_eq!(client.get_verifier_log(&0, &10).len(), 0);
+    assert_eq!(client.get_subjects_by_verifier(&verifier, &0, &10).len(), 0);
+
+    // No batch_app event was published by the rejected call.
+    use soroban_sdk::{symbol_short, testutils::Events as _, Symbol, TryFromVal};
+    let batch_topic = symbol_short!("batch_app");
+    let batch_events = env
+        .events()
+        .all()
+        .iter()
+        .filter(|(_, topics, _)| {
+            topics
+                .get(0)
+                .map(|t| {
+                    Symbol::try_from_val(&env, &t)
+                        .map(|s| s == batch_topic)
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        })
+        .count();
+    assert_eq!(batch_events, 0, "rejected empty batch must not emit batch_app");
+}
+
 #[test]
 fn test_revoke_rejects_invalid_tier_without_state_change() {
     let (env, client, admin) = setup();
