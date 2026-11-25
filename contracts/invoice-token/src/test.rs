@@ -879,6 +879,54 @@ fn test_double_full_settle_fails() {
 }
 
 #[test]
+fn test_second_settle_rejected_and_accounting_unchanged() {
+    // Repeated full settlement must be rejected with the contract's existing
+    // failure mode (AlreadySettled) and must not create a second settlement
+    // effect: token balances, total supply, settlement amount, redemption dust,
+    // the lifecycle status and the audit journal all stay exactly as the first
+    // settlement left them. This preserves the one-way nature of the transition.
+    let h = setup();
+    let holder = Address::generate(&h.env);
+    h.approve_kyc(&holder);
+
+    // Create and settle a valid invoice once.
+    let id = inv_id(&h.env);
+    h.token.issue(&id, &holder, &1_000);
+    h.token.settle(&id);
+    let face = h.token.get_meta(&id).face_value_usd;
+
+    // Snapshot the post-settlement accounting state.
+    let status = h.token.invoice_status(&id);
+    let supply = h.token.total_supply(&id);
+    let balance = h.token.balance(&holder, &id);
+    let settlement = h.token.settlement_amount(&id);
+    let dust = h.token.collect_redemption_dust(&id);
+    let journal_len = h.token.get_journal(&id).len();
+    assert_eq!(status, InvoiceStatus::FullySettled);
+    assert_eq!(supply, 1_000);
+    assert_eq!(balance, 1_000);
+    assert_eq!(settlement, face);
+    assert_eq!(dust, face);
+    assert_eq!(journal_len, 2); // Created→Issued + Issued→FullySettled
+
+    // Attempt settlement a second time — must be rejected with AlreadySettled,
+    // the failure mode the contract already uses for this guard.
+    assert_eq!(
+        h.token.try_settle(&id),
+        Err(Ok(InvoiceError::AlreadySettled.into()))
+    );
+
+    // Verify no duplicate settlement effect: every accounting field and the
+    // lifecycle state are unchanged after the rejected call.
+    assert_eq!(h.token.invoice_status(&id), status);
+    assert_eq!(h.token.total_supply(&id), supply);
+    assert_eq!(h.token.balance(&holder, &id), balance);
+    assert_eq!(h.token.settlement_amount(&id), settlement);
+    assert_eq!(h.token.collect_redemption_dust(&id), dust);
+    assert_eq!(h.token.get_journal(&id).len(), journal_len);
+}
+
+#[test]
 fn test_double_partial_settle_fails() {
     let h = setup();
     let holder = Address::generate(&h.env);

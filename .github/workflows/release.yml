@@ -19,6 +19,11 @@ jobs:
         with:
           fetch-depth: 0   # full history so the changelog extractor can read all tags
 
+      # ── Fail fast if the contract crate versions do not match the tag ──────
+      - name: Check contract versions match the release tag
+        shell: bash
+        run: bash scripts/check-release-version.sh "$GITHUB_REF_NAME"
+
       # ── Extract the changelog entry for this version ──────────────────────
       - name: Extract changelog entry
         id: changelog

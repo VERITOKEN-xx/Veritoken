@@ -65,6 +65,7 @@ to attribute; the full suite is the final gate, not the first step.
 | Frontend | `npm test` in `frontend/` (or `npx vitest run <file>` for one file) | None |
 | SDK | `npm test` in `sdk/` | None |
 | Deployment scripts | `bash -n` on changed scripts (see [Shell script checks](#shell-script-checks)) | None |
+| Integration fixture plans, runner, and transport | `npm run test:unit` in `tests/integration/` (see the [integration fixture guide](tests/integration/README.md)) | `npm install` in `tests/integration/`; no local node, Docker, or built WASMs |
 | Lifecycle against a local node | `npm run test:lifecycle` in `tests/integration/` | Docker, local Soroban node, built WASMs |
 | Browser workflows | `npm test` in `tests/e2e/` | Docker, built WASMs |
 
@@ -87,6 +88,7 @@ prove deployment readiness.
 | `cargo test --features testutils` | Deployment scripts that submit transactions (funded Stellar identity, network access) |
 | `npm run build` / `npm run lint` in `frontend/` | Anything pointed at testnet or a remote RPC endpoint |
 | `npm test` in `sdk/` and `frontend/` | |
+| `npm run test:unit` in `tests/integration/` | |
 | `bash -n` on shell scripts | |
 
 Deployment and lifecycle exercises are documented in
@@ -118,7 +120,7 @@ credentials or a funded account.
 
 | Area | Kind | Working dir | Command |
 | --- | --- | --- | --- |
-| Single contract (e.g. `rwa-token`, `kyc-registry`, `compliance-engine`, `invoice-token`, `property-token`, `carbon-credit-token`, `token-helpers`) | Unit | repo root | `cargo test -p rwa-token --features testutils` |
+| Single contract (one command per crate in [Single contract crate commands](#single-contract-crate-commands)) | Unit | repo root | `cargo test -p rwa-token --features testutils` |
 | All contracts and Rust test crates | Unit + integration | repo root | `cargo test --features testutils` |
 | Cross-contract integration suite | Integration | repo root | `cargo test -p integration-tests --features testutils` |
 | Smoke tests | Integration | repo root | `cargo test -p smoke-tests` |
@@ -135,6 +137,39 @@ credentials or a funded account.
 Install dependencies once with `npm install` from the repository root (covers
 the `frontend` and `sdk` workspaces); `tests/integration` and `tests/e2e` are
 separate installs inside their own directories.
+
+#### Single contract crate commands
+
+Every contract workspace member under `contracts/` has its own focused test
+command. Run these from the repository root. `-p` takes the Cargo package name
+(the `name` in that crate's `Cargo.toml`), which is not always the directory
+name. Every contract crate defines a `testutils` feature, so pass
+`--features testutils` for all of them.
+
+| Crate directory | Package name | Focused test command |
+| --- | --- | --- |
+| `contracts/token-helpers` | `token-helpers` | `cargo test -p token-helpers --features testutils` |
+| `contracts/rwa-token` | `rwa-token` | `cargo test -p rwa-token --features testutils` |
+| `contracts/kyc-registry` | `kyc-registry` | `cargo test -p kyc-registry --features testutils` |
+| `contracts/compliance-engine` | `compliance-engine` | `cargo test -p compliance-engine --features testutils` |
+| `contracts/invoice-token` | `invoice-token` | `cargo test -p invoice-token --features testutils` |
+| `contracts/property-token` | `property-token` | `cargo test -p property-token --features testutils` |
+| `contracts/carbon-credit-token` | `carbon-credit-token` | `cargo test -p carbon-credit-token --features testutils` |
+
+The Rust test crates under `tests/` are listed in the
+[full command reference](#full-command-reference) above. The smoke crate
+(`smoke-tests`) is the one workspace member without a `testutils` feature, so
+run it without the flag.
+
+To list the package names and features yourself:
+
+```bash
+cargo metadata --no-deps --format-version 1 \
+  | python3 -c 'import json,sys; [print(p["name"], sorted(p["features"])) for p in json.load(sys.stdin)["packages"]]'
+```
+
+To run one test inside a crate, add a name filter, for example
+`cargo test -p kyc-registry --features testutils approve`.
 
 ---
 

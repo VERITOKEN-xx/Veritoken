@@ -63,7 +63,17 @@ Open `CHANGELOG.md` and confirm the `[Unreleased]` section contains entries for 
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --features testutils
+bash scripts/check-release-version.sh
 ```
+
+`scripts/check-release-version.sh` confirms that every `contracts/*/Cargo.toml`
+package version equals the newest released `## [X.Y.Z]` heading in
+`CHANGELOG.md`. Pass a version (`bash scripts/check-release-version.sh 0.2.0`)
+to check against that value instead. It exits `1` and names each crate whose
+version differs. The same check runs in the `release-version` CI job, inside
+`scripts/release.sh` after the version bump, and as the first step of
+`release.yml`, where it checks against the pushed tag before anything is
+built or published.
 
 ### 3. Run the release script
 
@@ -104,6 +114,42 @@ The tag push triggers the `release.yml` CI workflow. Monitor it in the Actions t
 Once CI completes, the GitHub release page for `vX.Y.Z` will be created with:
 - The changelog entry as the release body
 - Optimised WASM binaries for all five contracts as downloadable artifacts
+
+---
+
+## Verifying Deployment Artifacts Before Release
+
+Run these commands from the repository root, in this order. The **Needs**
+column lists what each step depends on. Steps 1–3 check **local build output** only.
+Steps 4–6 check a **deployment manifest**, so they apply only once a
+deployment exists (for example, the testnet deployment you are promoting).
+
+| # | Command | What it checks | Needs |
+|---|---|---|---|
+| 1 | `cargo build --release --target wasm32v1-none` | Builds the release WASM into `target/wasm32v1-none/release/` | Rust toolchain |
+| 2 | `bash scripts/verify-artifacts.sh` | Local build output: every required artifact exists, has the WASM magic bytes, and is 4 KB–128 KB | Step 1 output |
+| 3 | `bash scripts/check-wasm-size.sh` | Local build output: each contract is within its [size budget](contract-size-budget.md) | Step 1 output |
+| 4 | `python3 scripts/deployment_cli.py validate-manifest --manifest deploy-manifest.json` | Deployment manifest: offline structural check (schema, network, contract records). Does not read artifacts or contact the network | `deploy-manifest.json` from a deployment |
+| 5 | `bash scripts/verify-deployment.sh <identity>` | Deployment manifest against local artifacts **and on-chain state**: local SHA-256 and metadata hashes, deployed code hash, deployed metadata, registry links, health calls. Writes `deployment-verification-report.json` | Step 1 output, `deploy-manifest.json`, Stellar CLI, network access |
+| 6 | `bash scripts/check-drift.sh --check-only` | Deployment manifest against `frontend/.env` contract IDs and network. Offline | `deploy-manifest.json`, `frontend/.env` |
+
+Step 5 hashes the artifact files at the paths recorded in the manifest, so run
+it against the same build that was deployed. Optimising or rebuilding those
+files changes their hashes, and the check fails.
+
+Steps 1–4 and 6 never contact the network. Passing them does **not** show
+what is deployed on-chain and is not a substitute for step 5. Hand over
+contract IDs only after step 5 reports `status: passed` with zero failed
+checks.
+
+Manifests written by the TypeScript deployer in `deployment/scripts/` use a
+different format. Check those with `verify-manifest.ts`, as described in
+[deployment/scripts/README.md](../deployment/scripts/README.md).
+
+For what each check covers, the report format, and the identity and network
+options, see [docs/deployment-automation.md](deployment-automation.md). For
+the mainnet promotion checklist, see
+[docs/mainnet-deployment.md](mainnet-deployment.md).
 
 ---
 
@@ -177,9 +223,11 @@ Tags matching `v*.*.*-*` are automatically marked as pre-releases in the GitHub 
 The release workflow lives at `.github/workflows/release.yml`. It:
 
 1. Checks out the repository at the tagged commit.
-2. Installs the Rust toolchain and Stellar CLI.
-3. Builds and optimises all WASM binaries.
-4. Extracts the changelog entry for the tagged version.
-5. Creates the GitHub release using `softprops/action-gh-release`.
+2. Runs `scripts/check-release-version.sh` against the tag and stops if any
+   contract crate version differs.
+3. Installs the Rust toolchain and Stellar CLI.
+4. Builds and optimises all WASM binaries.
+5. Extracts the changelog entry for the tagged version.
+6. Creates the GitHub release using `softprops/action-gh-release`.
 
 No secrets beyond the default `GITHUB_TOKEN` are required — the `contents: write` permission is granted in the workflow file.

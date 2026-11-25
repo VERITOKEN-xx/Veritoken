@@ -97,6 +97,34 @@ python3 scripts/deployment_cli.py validate-manifest --help
 python3 scripts/deployment_cli.py simulate-upgrade --help
 ```
 
+### Dry-run planning example
+
+`plan` is the plan-only mode; `deploy` has no `--dry-run` flag. It takes only
+non-secret inputs: a config path, a network, and optionally the artifact
+directory used to expand `${wasm_dir}` in the printed artifact paths. It does
+not accept `--identity`. Replace the placeholder paths with your own:
+
+```bash
+python3 scripts/deployment_cli.py plan \
+  --config path/to/your-deployment-config.json \
+  --network testnet \
+  --wasm-dir path/to/release-wasm-dir
+```
+
+On success it exits `0` and prints JSON to stdout. Each `operations` entry
+gives a contract's `order`, `dependencies`, `deployment_mode`, resolved
+`artifact` path, and the steps `deploy` would perform (for example
+`upload_wasm`, `deploy_contract`, `invoke:initialize`, `verify_code_hash`). An
+invalid config, dependency cycle, or mainnet placeholder exits `1` with an
+`ERROR:` line.
+
+**A plan is a preview, not evidence of a deployment.** `plan` makes no Stellar
+CLI or network call. It does not check that the WASM files exist or that the
+identity is funded. It writes no checkpoint, manifest, verification report, or
+`frontend/.env`. A deployment has happened only when `deploy` (or
+`deploy.sh`) finishes and a `verify` run produces a report with
+`"status": "passed"`. See [Verification report](#verification-report).
+
 ## Command side effects
 
 Each command below is classified from its implementation in

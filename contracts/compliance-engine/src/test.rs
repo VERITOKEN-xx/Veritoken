@@ -2131,6 +2131,224 @@ fn test_replacement_proposal_activates_only_latest() {
     assert_eq!(ce.policy_version_count(), history.len() + 1);
 }
 
+// ── Holding-period threshold boundary ────────────────────────────────────────
+//
+// Task: cover a transfer immediately before and exactly at the threshold so the
+// inclusive-equality rule is explicit and deterministic.
+//
+// The engine computes:  now - holder_since  and compares it to min_holding_period.
+// The check is `< min_holding_period`, so the duration must be strictly less
+// than the period to deny.  At equality (duration == period) the transfer is
+// allowed.  One second before equality it is denied.
+
+#[test]
+fn test_holding_period_one_second_before_threshold_denied() {
+    use crate::{DenyReason, TransferDecision};
+    // setup_with_kyc so evaluate_transfer can pass the KYC gate and reach
+    // the holding-period check.  KYC runs before the holding-period check in
+    // evaluate_transfer_inner; without approved records the test would hit
+    // FromKycMissing instead of HoldingPeriodNotMet.
+    let (env, ce, kyc, verifier, _) = setup_with_kyc();
+    let from = Address::generate(&env);
+    let to = Address::generate(&env);
+
+    for address in [&from, &to] {
+        kyc.approve(&verifier, address, &0, &0, &String::from_str(&env, "US"));
+    }
+
+    // Set a 100-second minimum holding period.
+    ce.set_rules(&rules(0, 100, 0, false));
+
+    // Record the holder start time.
+    let hold_start: u64 = 2_000;
+    env.ledger().set_timestamp(hold_start);
+    ce.register_holder(&from);
+
+    // One second before the threshold: elapsed = 99 < 100 → denied.
+    env.ledger().set_timestamp(hold_start + 99);
+    assert_eq!(
+        ce.evaluate_transfer(&from, &to, &1),
+        TransferDecision::Deny(DenyReason::HoldingPeriodNotMet)
+    );
+}
+
+#[test]
+fn test_holding_period_exactly_at_threshold_allowed() {
+    use crate::TransferDecision;
+    let (env, ce, kyc, verifier, _) = setup_with_kyc();
+    let from = Address::generate(&env);
+    let to = Address::generate(&env);
+
+    for address in [&from, &to] {
+        kyc.approve(&verifier, address, &0, &0, &String::from_str(&env, "US"));
+    }
+
+    // Set a 100-second minimum holding period.
+    ce.set_rules(&rules(0, 100, 0, false));
+
+    // Record the holder start time.
+    let hold_start: u64 = 2_000;
+    env.ledger().set_timestamp(hold_start);
+    ce.register_holder(&from);
+
+    // Exactly at the threshold: elapsed = 100 == 100 → allowed.
+    env.ledger().set_timestamp(hold_start + 100);
+    assert_eq!(
+        ce.evaluate_transfer(&from, &to, &1),
+        TransferDecision::Allow
+    );
+}
+
+// ── Emergency pause cycle ─────────────────────────────────────────────────────
+//
+// Task: verify the full pause cycle through evaluate_transfer — allow before
+// pause, deny during pause, allow again after unpause.
+//
+// This test does not rely solely on reading the stored paused flag; it drives
+// every step through the compliance decision API.
+
+#[test]
+fn test_pause_cycle_allow_deny_allow_via_evaluate_transfer() {
+    use crate::{DenyReason, TransferDecision};
+    let (env, ce, kyc, verifier, _) = setup_with_kyc();
+    let from = Address::generate(&env);
+    let to = Address::generate(&env);
+
+    // Both parties have valid KYC so only the pause flag determines the outcome.
+    for address in [&from, &to] {
+        kyc.approve(&verifier, address, &0, &0, &String::from_str(&env, "US"));
+    }
+
+    // Before pause: transfer is allowed under the default rules.
+    assert_eq!(
+        ce.evaluate_transfer(&from, &to, &1),
+        TransferDecision::Allow
+    );
+
+    // After pause: transfer is denied with CompliancePaused regardless of KYC.
+    ce.pause();
+    assert_eq!(
+        ce.evaluate_transfer(&from, &to, &1),
+        TransferDecision::Deny(DenyReason::CompliancePaused)
+    );
+
+    // After unpause: decision returns to Allow, matching the pre-pause result.
+    ce.unpause();
+    assert_eq!(
+        ce.evaluate_transfer(&from, &to, &1),
+        TransferDecision::Allow
+    );
+}
+
+// ── Blocklist directional coverage ───────────────────────────────────────────
+//
+// Task: cover both a blocked sender and a blocked recipient as separate,
+// focused cases so the directional semantics are unambiguous.
+//
+// Both tests use evaluate_transfer so the DenyReason is explicitly asserted
+// rather than only checking that a blocklist entry can be stored.
+
+#[test]
+fn test_blocklisted_sender_transfer_denied() {
+    use crate::{DenyReason, TransferDecision};
+    let (env, ce, kyc, verifier, _) = setup_with_kyc();
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    for address in [&sender, &recipient] {
+        kyc.approve(&verifier, address, &0, &0, &String::from_str(&env, "US"));
+    }
+
+    // Baseline: transfer is allowed before any blocklist change.
+    assert_eq!(
+        ce.evaluate_transfer(&sender, &recipient, &1),
+        TransferDecision::Allow
+    );
+
+    // Block the sender: the transfer must be denied with FromBlocklisted.
+    ce.add_to_blocklist(&sender);
+    assert_eq!(
+        ce.evaluate_transfer(&sender, &recipient, &1),
+        TransferDecision::Deny(DenyReason::FromBlocklisted)
+    );
+}
+
+#[test]
+fn test_blocklisted_recipient_transfer_denied() {
+    use crate::{DenyReason, TransferDecision};
+    let (env, ce, kyc, verifier, _) = setup_with_kyc();
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    for address in [&sender, &recipient] {
+        kyc.approve(&verifier, address, &0, &0, &String::from_str(&env, "US"));
+    }
+
+    // Baseline: transfer is allowed before any blocklist change.
+    assert_eq!(
+        ce.evaluate_transfer(&sender, &recipient, &1),
+        TransferDecision::Allow
+    );
+
+    // Block the recipient: the transfer must be denied with ToBlocklisted.
+    ce.add_to_blocklist(&recipient);
+    assert_eq!(
+        ce.evaluate_transfer(&sender, &recipient, &1),
+        TransferDecision::Deny(DenyReason::ToBlocklisted)
+    );
+}
+
+// ── Maximum transfer amount boundary ─────────────────────────────────────────
+//
+// Task: document the equality boundary for max_transfer_amount — a transfer
+// equal to the configured maximum is permitted; one unit above it is denied.
+//
+// The engine check is `amount > max_transfer_amount`, so equality (==) is on
+// the allowed side.  Both cases use evaluate_transfer to make the DenyReason
+// explicit for the above-limit case.
+
+#[test]
+fn test_max_transfer_amount_at_exact_limit_allowed() {
+    use crate::TransferDecision;
+    let (env, ce, kyc, verifier, _) = setup_with_kyc();
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    for address in [&sender, &recipient] {
+        kyc.approve(&verifier, address, &0, &0, &String::from_str(&env, "US"));
+    }
+
+    let limit: i128 = 1_000;
+    ce.set_rules(&rules(limit, 0, 0, false));
+
+    // A transfer equal to the configured maximum must be allowed.
+    assert_eq!(
+        ce.evaluate_transfer(&sender, &recipient, &limit),
+        TransferDecision::Allow
+    );
+}
+
+#[test]
+fn test_max_transfer_amount_one_above_limit_denied() {
+    use crate::{DenyReason, TransferDecision};
+    let (env, ce, kyc, verifier, _) = setup_with_kyc();
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    for address in [&sender, &recipient] {
+        kyc.approve(&verifier, address, &0, &0, &String::from_str(&env, "US"));
+    }
+
+    let limit: i128 = 1_000;
+    ce.set_rules(&rules(limit, 0, 0, false));
+
+    // One unit above the maximum must be denied with AmountExceeded.
+    assert_eq!(
+        ce.evaluate_transfer(&sender, &recipient, &(limit + 1)),
+        TransferDecision::Deny(DenyReason::AmountExceeded)
+    );
+}
+
 // #914: caller-supplied audit text occurs in these four public mutation paths.
 // deny_transfer uses an evaluation reason; migrate_schema has a separate audit log.
 #[test]

@@ -32,6 +32,7 @@ writes; the examples below follow the same pattern in each language.
 | [`carbon_receipt.py`](carbon_receipt.py) | Python 3.10+ | `python docs/examples/carbon_receipt.py 0` (repository root) |
 | [`python_example.py`](python_example.py) | Python 3.10+ | `python python_example.py` |
 | [`javascript_example.js`](javascript_example.js) | JavaScript (Node.js) | `node javascript_example.js` |
+| [`kyc_read_example.mjs`](kyc_read_example.mjs) | JavaScript (Node.js, `@veritoken/sdk`) | `node docs/examples/kyc_read_example.mjs` (repository root) |
 | [`sdk_client_factory_example.ts`](sdk_client_factory_example.ts) | TypeScript (`@veritoken/sdk`) | `npx tsx docs/examples/sdk_client_factory_example.ts` |
 | [`sdk_health_check_example.ts`](sdk_health_check_example.ts) | TypeScript (`@veritoken/sdk`) | `npx tsx docs/examples/sdk_health_check_example.ts` |
 
@@ -40,17 +41,44 @@ dependency-injection pattern (`createClients` / `ClientFactory`) — composing
 several contract clients from one config object, and swapping in a mock
 client for tests without touching a real or simulated RPC endpoint.
 
-## Contract health check
+## Minimal KYC status read (JavaScript)
 
-[`sdk_health_check_example.ts`](sdk_health_check_example.ts) is read-only (no
-wallet, signing, or funded account). It calls each configured client's
-`health(opts?)` and the base `checkHealth(server, contractId, opts?)`, then
-maps the result to `operational` / `degraded` / `unavailable` for a status
-page. A health result is a snapshot taken at `checkedAt`. It is not a promise
-that a later transaction will succeed. For a broader example, see the frontend
-status page at
-[`frontend/src/pages/StatusPage.tsx`](../../frontend/src/pages/StatusPage.tsx)
-(route `/status`).
+[`kyc_read_example.mjs`](kyc_read_example.mjs) is the shortest path to a
+KYC check: one read-only `KycRegistryClient.isApproved(addr)` call through the
+SDK's `createClients` factory. It needs no wallet secret, signing, funded
+account, or transaction submission, so it is a safe first step before you
+build a full approval or transfer workflow. From the repository root:
+
+```bash
+npm install          # links the sdk workspace as @veritoken/sdk
+npm run build:sdk    # the example imports the built sdk/dist
+
+export VITE_KYC_REGISTRY_ID=C...    # placeholder: your kyc-registry contract ID
+export KYC_SUBJECT_ADDRESS=G...     # placeholder: the address to check
+export STELLAR_NETWORK=testnet      # optional; testnet is the default
+node docs/examples/kyc_read_example.mjs
+```
+
+The network is resolved by the SDK's `resolveNetworkConfig`, so the usual
+`VERITOKEN_NETWORK` / `STELLAR_NETWORK` and `VERITOKEN_RPC_URL` /
+`SOROBAN_RPC_URL` variables apply (see the
+[SDK network configuration](../../sdk/README.md#network-configuration)).
+
+Expected output for an approved subject:
+
+```
+Network:  testnet (https://soroban-testnet.stellar.org)
+Registry: C...
+Subject:  G...
+is_approved: true — the subject has a current, unexpired approval.
+```
+
+**A `false` result is not an error.** `is_approved: false` means the RPC call
+succeeded and the registry answered: the subject was never approved, was
+rejected or revoked, or its approval has expired. The script exits `0`. If the
+RPC endpoint is unreachable, the contract ID is wrong, or simulation fails,
+the script prints `KYC status could not be read …` and exits `1`. Treat that
+as "status unknown", never as "not approved".
 
 ## Carbon retirement receipt lookup
 
