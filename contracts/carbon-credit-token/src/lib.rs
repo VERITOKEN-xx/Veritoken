@@ -130,11 +130,11 @@ fn write_json_escaped(out: &mut [u8], pos: &mut usize, value: &String) {
                 out[*pos..*pos + 2].copy_from_slice(b"\\t");
                 *pos += 2;
             }
-            b'\u{08}' => {
+            b'\x08' => {
                 out[*pos..*pos + 2].copy_from_slice(b"\\b");
                 *pos += 2;
             }
-            b'\u{0c}' => {
+            b'\x0c' => {
                 out[*pos..*pos + 2].copy_from_slice(b"\\f");
                 *pos += 2;
             }
