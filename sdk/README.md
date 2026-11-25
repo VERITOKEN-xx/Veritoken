@@ -520,6 +520,78 @@ match a known Soroban contract-error pattern. `ContractName` is one of
 `"rwa" | "carbon" | "invoice" | "property" | "kyc" | "compliance"` — pass the
 same short name a client was constructed with.
 
+### Read errors vs write errors
+
+Reads and writes fail at different stages, so they surface different errors:
+
+- **Reads** (`get_*`, `is_*`, `balance`, ...) only simulate. A read can fail
+  because the contract rejected the simulation (`SimulationError`, or a plain
+  `Error` with a readable prefix when the message carries a contract error
+  code), or because the read endpoint is unreachable. Transport failures that
+  match `isTransientError` become a `TransientError` once retries run out;
+  anything else (a malformed response, an unexpected provider error) is
+  rethrown as it was raised. A read never signs or submits, so it never
+  throws `SigningError`, `SubmissionError`, `ConfirmError` or `TimeoutError`.
+- **Writes** run the full pipeline (see [Retries and timeouts](#retries-and-timeouts)),
+  and every typed failure records the stage it happened in on `TxError.kind`.
+
+Not every provider failure maps to a `TxError` subtype: errors from your own
+`signTx` are wrapped in `SigningError`, but a non-transient RPC error during
+simulation or submission is rethrown as a plain `Error` whose message names
+the call and stage (`Contract call <method> on <contractId> failed during
+<stage>: ...`, original error on `.cause`). Always keep a final branch that
+rethrows what you don't recognise:
+
+```ts
+import { TxError, SimulationError, SubmissionError, TimeoutError } from "@veritoken/sdk";
+
+try {
+  await rwa.transfer(from, to, 100n, signTx);
+} catch (err) {
+  if (!(err instanceof TxError)) throw err; // contract-coded or unknown error: let the caller decide
+
+  // err.kind is the pipeline stage the write failed in.
+  switch (err.kind) {
+    case "simulation":
+      // Rejected before signing — nothing was sent.
+      if (err instanceof SimulationError) log("simulation", err.detail);
+      break;
+    case "signing":
+      // signTx threw or returned empty; the underlying reason is on err.cause.
+      log("signing", err.cause);
+      break;
+    case "submission":
+      // The network refused the signed transaction (txHash is undefined here).
+      if (err instanceof SubmissionError) log("submission", err.message);
+      break;
+    case "timeout":
+      // Submitted, but not confirmed in time. See "Submission errors vs
+      // confirmation timeouts" before retrying.
+      if (err instanceof TimeoutError) await checkStatus(err.txHash);
+      break;
+    default:
+      throw err; // sequence, confirm, transient: handle or rethrow
+  }
+}
+```
+
+Structured fields to inspect on each subtype:
+
+| Error | `kind` | Extra fields |
+|---|---|---|
+| `SequenceError` | `"sequence"` | `cause` |
+| `SimulationError` | `"simulation"` | `detail` (raw simulation error), `cause` |
+| `SigningError` | `"signing"` | `cause` (what `signTx` threw) |
+| `SubmissionError` | `"submission"` | `txHash` (may be `undefined`), `cause` |
+| `ConfirmError` | `"confirm"` | `txHash`, `finalStatus` |
+| `TimeoutError` | `"timeout"` | `txHash`, `elapsedMs` |
+| `TransientError` | `"transient"` | `cause` (the last transport error) |
+
+Client methods rewrite errors whose message contains `Error(Contract, #N)`
+into a plain `Error` (see above), so a contract rejection during simulation
+usually reaches you as a plain `Error`, not a `SimulationError` — use
+`client.parseError(err.message)` or `formatContractError` for those.
+
 ## Retries and timeouts
 
 Every client read and write goes through `TxPipeline`
@@ -580,6 +652,41 @@ Things the SDK does **not** guarantee:
   message check, so a hash or elapsed time containing `429`, `502` or `503`
   can trigger a retry of the whole write.
 
+### Submission errors vs confirmation timeouts
+
+A write can stop at two different points, and they mean different things
+for a retry:
+
+| Where it stopped | Error | What you know |
+|---|---|---|
+| Submission, network said no | `SubmissionError` (`status: "ERROR"`) | The network refused this transaction. It will not be applied. |
+| Submission, transport failed | `TransientError`, or a plain `Error` naming `failed during submission` | **Ambiguous.** The request may or may not have reached the network, and there is no `txHash` to look up. |
+| Confirmation, deadline reached | `TimeoutError` (`txHash`, `elapsedMs`) | **Ambiguous.** `sendTransaction` accepted the transaction; the SDK stopped polling after `confirmTimeoutMs`. |
+| Confirmation, final status | `ConfirmError` (`txHash`, `finalStatus`) | The transaction reached a final non-`SUCCESS` status. |
+
+A `TimeoutError` is a *confirmation* timeout, not a submission failure. It
+is **not** proof that the transaction was never submitted or never applied:
+the transaction was accepted for submission and may still land after the SDK
+gave up waiting.
+
+Before retrying an ambiguous write, especially a non-idempotent one such as
+`transfer`, `mint`, `issue` or `redeem`:
+
+1. If you have a `txHash` (`TimeoutError`, `ConfirmError`), look it up with
+   `server.getTransaction(txHash)` as in the example below. `SUCCESS` means
+   the write is done; do not resend it. A final failure status means it was
+   not applied.
+2. While the status is still `NOT_FOUND`, keep polling. The transaction can
+   only be included until its validity window (`timeoutSeconds`, default
+   30 s, counted from when it was built) expires, so wait until that window
+   has passed before treating it as not applied.
+3. Without a hash (transport failure during submission), read the affected
+   state (for example the recipient's `balance`, or the contract's events via
+   `client.getEvents()` / [Event parsing](#event-parsing)) to decide whether the
+   write took effect.
+4. Only then build a new write. Never resend a non-idempotent write just
+   because a call threw.
+
 **Handling errors.** The pipeline errors all extend `TxError` and carry a
 machine-readable `kind` (`"sequence" | "simulation" | "signing" |
 "submission" | "confirm" | "timeout" | "transient"`) plus the original
@@ -633,6 +740,62 @@ const events = await server.getEvents({ ...opts });
 const parsed = parseEvents(events.events);
 const transfers = filterByName(parsed, "transfer"); // narrows to KnownParsedEvent<"transfer">
 ```
+
+### Known and unknown events
+
+Every `ParsedEvent` carries a boolean `known` discriminator. `known: true`
+gives a `KnownParsedEvent`, whose `name` is a `KnownEventName` and whose
+`data` is typed from `EventDataMap`. `known: false` gives an
+`UnknownParsedEvent`: the topic name had no decoder in this SDK version, so
+`name` is a plain `string` and `data` is the raw decoded value (`unknown`).
+An unrecognised name never becomes `null`. `parseEvent` returns `null` only
+for an event with no topics, and `parseEvents` drops those.
+
+Contracts gain new events over time (the KYC registry already emits names
+such as `approved` and `batch_app` that have no typed decoder yet), so
+consumers should tolerate unknown events instead of throwing on them. Check
+`known` first, then switch on `name`. No casts are needed:
+
+```ts
+import { parseEvents } from "@veritoken/sdk";
+import type { ParsedEvent, UnknownParsedEvent } from "@veritoken/sdk";
+
+function handleEvents(events: ParsedEvent[]): UnknownParsedEvent[] {
+  const unhandled: UnknownParsedEvent[] = [];
+  for (const e of events) {
+    if (!e.known) {
+      // e: UnknownParsedEvent. Keep it instead of dropping it.
+      unhandled.push(e);
+      continue;
+    }
+    // e: KnownParsedEvent. Switching on name narrows data.
+    switch (e.name) {
+      case "transfer":
+        console.log(e.data.from, e.data.to, e.data.amount); // amount: bigint
+        break;
+      case "kyc_stale":
+        console.log(e.data.addr, e.data.isActive, e.data.expiry);
+        break;
+      default:
+        // A known event this consumer doesn't act on.
+        break;
+    }
+  }
+  return unhandled;
+}
+
+const unhandled = handleEvents(parseEvents((await server.getEvents({ ...opts })).events));
+```
+
+If audit completeness matters (compliance logs, indexers), do not discard
+unknown events silently. Store them with `name`, `topics`, `data`, `txHash`,
+`ledger` and `pagingToken` so they can be re-decoded after an SDK upgrade, or
+at least count and log them. Dropping them hides contract activity that a
+newer SDK would recognise.
+
+API reference: the `ParsedEvent`, `KnownParsedEvent`, `UnknownParsedEvent`,
+`EventDataMap` and `KnownEventName` types and `parseEvent` / `parseEvents` /
+`filterByName` in [src/eventParser.ts](src/eventParser.ts).
 
 Every client also exposes a convenience `getEvents` — see
 [src/clients/base.ts](src/clients/base.ts) (`GetContractEventsOptions`).

@@ -305,6 +305,8 @@ revoke_all_by_verifier(env, caller: Address, verifier: Address)  // admin-only, 
 ```
 `approve` / `approve_batch` require the subject to have an ISO-3166-1 alpha-2 jurisdiction. `update_tier` only works on currently Approved subjects.
 
+An empty `approve_batch` is **rejected**, not treated as a successful no-op: it fails with `EmptyBatch` (code 15) before any record, lifecycle transition, verifier-log entry or event is written.
+
 **`expiry` argument (zero-expiry convention).** The `expiry` parameter is stored as-is in [`KycRecord.expiry`](#kycrecord):
 
 - Pass `0` to grant an approval that **never expires** (permanent approval).
