@@ -14,6 +14,9 @@ npm run typecheck
 npm run test:unit
 ```
 
+`test:unit` uses in-memory RPC stubs, so it does not need a local node,
+Docker, or built WASMs.
+
 For the live lifecycle suite, first build the contracts and start quickstart:
 
 ```bash
