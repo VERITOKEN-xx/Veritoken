@@ -158,6 +158,23 @@ cargo test --features testutils
 > local stack with no network dependency at all, see the
 > [Docker environment guide](docs/docker-environment.md).
 
+To run only the deployment smoke tests:
+
+```bash
+cargo test -p smoke-tests
+```
+
+The [smoke suite](tests/smoke/tests/smoke.rs) registers each contract in the
+Soroban test environment and checks that it initialises and that its core
+read/write entry points respond. It does **not** need deployed contracts, a
+local node, or a funded identity. The testnet deploy workflow runs the same
+command after a deployment, but the tests do not read the deployed contract
+IDs. Use `scripts/verify-deployment.sh` to check a real deployment. The crate
+has no `testutils` feature, so do not add `--features testutils` to this
+command. The broad command above already includes these tests. Per-crate
+commands are listed in
+[CONTRIBUTING.md](CONTRIBUTING.md#full-command-reference).
+
 ---
 
 ## Frontend
