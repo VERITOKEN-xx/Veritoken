@@ -685,13 +685,35 @@ if (!health.reachable) console.error("Contract unreachable:", health.error);
 ```
 
 Signals collected:
-- `reachable` — RPC responded without a network error
+- `reachable` — RPC responded without a network error and with a well-formed payload
 - `latestLedger` — current ledger sequence
 - `recentEventCount` — events emitted in the last `lookbackLedgers` ledgers (default 1000)
 - `checkedAt` — ISO timestamp of the check
 - `error` — error message if `reachable` is false
 
 Per-contract extensions: `paused` + `holderCount` (compliance), `verifierCount` (KYC), `totalSupply` (RWA token).
+
+A successful HTTP response is not proof of a healthy endpoint. If
+`getLatestLedger` returns no valid `sequence`, or `getEvents` returns no
+`events` array, the result is `reachable: false` and `error` starts with
+`MALFORMED_RPC_RESPONSE_PREFIX` (exported), so you can tell a bad payload apart
+from a network failure:
+
+```ts
+import { checkHealth, MALFORMED_RPC_RESPONSE_PREFIX } from "@veritoken/sdk";
+
+const h = await checkHealth(server, contractId);
+if (h.error?.startsWith(MALFORMED_RPC_RESPONSE_PREFIX)) {
+  // the node answered, but with data the SDK could not trust
+}
+```
+
+A health result is a snapshot taken at `checkedAt`, not a guarantee that a
+later transaction will succeed. See
+[docs/examples/sdk_health_check_example.ts](../docs/examples/sdk_health_check_example.ts)
+for a runnable read-only example that turns results into status labels, and
+the frontend status page ([frontend/src/pages/StatusPage.tsx](../frontend/src/pages/StatusPage.tsx),
+served at `/status`) for a broader dashboard.
 
 ## Auth helpers
 

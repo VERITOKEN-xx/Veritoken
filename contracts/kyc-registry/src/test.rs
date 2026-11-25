@@ -775,7 +775,7 @@ fn test_subject_can_retrieve_own_full_record() {
     assert!(matches!(full_record.record.status, KycStatus::Approved));
 
     // Verify transition data is returned
-    assert_eq!(full_record.lifecycle_count, 2);
+    assert_eq!(client.get_lifecycle_count(&subject), 2);
     let history = client.get_lifecycle_history(&subject, &0, &10);
     assert_eq!(history.len(), 2);
     assert_eq!(history.get(0).unwrap().kind, KycTransitionKind::Approve);
@@ -784,7 +784,7 @@ fn test_subject_can_retrieve_own_full_record() {
 
 #[test]
 fn test_removing_last_admin_is_rejected() {
-    let (env, client, admin) = setup();
+    let (_env, client, admin) = setup();
 
     // Registry initialized with one admin
     let admins = client.get_admins();
@@ -2317,8 +2317,8 @@ fn test_interleaved_transitions_are_isolated_per_subject() {
     // Interleave: A approve → B approve → A revoke → B update_tier → A approve
     client.approve(&verifier, &subject_a, &1, &0, &js(&env, "US")); // A seq 0
     client.approve(&verifier, &subject_b, &2, &0, &js(&env, "DE")); // B seq 0
-    client.revoke(&verifier, &subject_a);                            // A seq 1
-    client.update_tier(&verifier, &subject_b, &1);                  // B seq 1
+    client.revoke(&verifier, &subject_a); // A seq 1
+    client.update_tier(&verifier, &subject_b, &1); // B seq 1
     client.approve(&verifier, &subject_a, &2, &0, &js(&env, "GB")); // A seq 2
 
     // ── Subject A: 3 transitions, own sequence ────────────────────────────────
@@ -2724,7 +2724,10 @@ fn test_never_seen_get_record_panics() {
     let (env, client, _admin) = setup();
     let subject = Address::generate(&env);
     let res = client.try_get_record(&subject);
-    assert!(res.is_err(), "get_record must panic for a never-seen address");
+    assert!(
+        res.is_err(),
+        "get_record must panic for a never-seen address"
+    );
 }
 
 /// `get_lifecycle_count` returns `0` for a subject that has no history.
@@ -3132,7 +3135,7 @@ fn test_add_verifier_duplicate_is_idempotent() {
 
     // The verifier still appears exactly once in the public roster.
     let roster = client.verifier_list_pub();
-    let occurrences = roster.iter().filter(|v| v == verifier).count();
+    let occurrences = roster.iter().filter(|v| *v == verifier).count();
     assert_eq!(
         occurrences, 1,
         "verifier must appear exactly once in the roster after two add_verifier calls"
@@ -3142,4 +3145,160 @@ fn test_add_verifier_duplicate_is_idempotent() {
     let subject = Address::generate(&env);
     client.approve(&verifier, &subject, &1, &0, &js(&env, "US"));
     assert!(client.is_approved(&subject));
+}
+
+// ── approve_batch size boundary (#1145) ───────────────────────────────────────
+
+/// The contract constant must match the documented maximum
+/// (docs/contract-api-reference.md: `approve_batch ... // max 20`).
+/// The exact maximum succeeds; `MAX_KYC_BATCH + 1` is rejected before any
+/// entry is processed, so an oversized call that would *overwrite* existing
+/// records leaves every record, lifecycle entry, expiry index key, reverse
+/// index and verifier-log entry exactly as it was.
+#[test]
+fn test_approve_batch_size_boundary_rejects_oversized_without_partial_state() {
+    use crate::{DataKey, MAX_KYC_BATCH};
+
+    assert_eq!(
+        MAX_KYC_BATCH, 20,
+        "contract maximum must match the API reference"
+    );
+
+    let (env, client, admin) = setup();
+    let contract_id = client.address.clone();
+    let verifier = Address::generate(&env);
+    client.add_verifier(&admin, &verifier);
+    env.ledger().set_timestamp(1_000);
+
+    let original_expiry: u64 = 86_400 * 10;
+
+    // ── Exactly the maximum: unique, valid subjects → succeeds ───────────────
+    let mut addrs: Vec<Address> = Vec::new(&env);
+    let mut max_batch = Vec::new(&env);
+    for _ in 0..MAX_KYC_BATCH {
+        let addr = Address::generate(&env);
+        addrs.push_back(addr.clone());
+        max_batch.push_back((addr, 1u32, original_expiry, js(&env, "US")));
+    }
+    assert_eq!(max_batch.len(), MAX_KYC_BATCH);
+    client.approve_batch(&verifier, &max_batch);
+
+    let mut snapshot = soroban_sdk::Vec::new(&env);
+    for addr in addrs.iter() {
+        assert!(client.is_approved(&addr));
+        snapshot.push_back(client.get_record(&addr));
+    }
+    let log_count_before = client.verifier_log_count();
+    assert_eq!(log_count_before, MAX_KYC_BATCH);
+    let verifier_subjects_before = client.get_subjects_by_verifier(&verifier, &0, &50);
+    assert_eq!(verifier_subjects_before.len(), MAX_KYC_BATCH);
+
+    // ── One over the maximum: every entry is valid and would change state
+    //    if processed (new tier, expiry and jurisdiction), plus one new
+    //    subject at the end. ──────────────────────────────────────────────────
+    let late_subject = Address::generate(&env);
+    let mut oversized = Vec::new(&env);
+    for addr in addrs.iter() {
+        oversized.push_back((addr, 3u32, 0u64, js(&env, "GB")));
+    }
+    oversized.push_back((late_subject.clone(), 3u32, 0u64, js(&env, "GB")));
+    assert_eq!(oversized.len(), MAX_KYC_BATCH + 1);
+
+    let res = client.try_approve_batch(&verifier, &oversized);
+    assert_eq!(res, Err(Ok(Error::from(KycError::BatchTooLarge))));
+
+    // ── No partial writes from the rejected call ─────────────────────────────
+    for i in 0..addrs.len() {
+        let addr = addrs.get(i).unwrap();
+        assert_eq!(
+            client.get_record(&addr),
+            snapshot.get(i).unwrap(),
+            "subject {i} record must be unchanged after a rejected oversized batch"
+        );
+        assert_eq!(
+            client.get_lifecycle_count(&addr),
+            1,
+            "subject {i} must keep only its original Approve transition"
+        );
+        let stored_expiry: Option<u64> = env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .get(&DataKey::SubjectExpiry(addr.clone()))
+        });
+        assert_eq!(
+            stored_expiry,
+            Some(original_expiry),
+            "subject {i} expiry index must be unchanged"
+        );
+    }
+    assert!(client.get_record_opt(&late_subject).is_none());
+    assert_eq!(client.get_lifecycle_count(&late_subject), 0);
+    assert_eq!(client.verifier_log_count(), log_count_before);
+    assert_eq!(
+        client.get_subjects_by_verifier(&verifier, &0, &50),
+        verifier_subjects_before
+    );
+}
+
+// ── Renewal with no expiry (#1143) ────────────────────────────────────────────
+
+/// Renewing an approval that has a finite future expiry with the documented
+/// no-expiry value (`0`) leaves the record Approved with `expiry == 0`, clears
+/// the expiry index, and keeps it active after the original expiry passes.
+#[test]
+fn test_renew_finite_expiry_approval_with_zero_clears_expiry() {
+    use crate::{DataKey, KycState};
+
+    let (env, client, admin) = setup();
+    let contract_id = client.address.clone();
+    let verifier = Address::generate(&env);
+    let subject = Address::generate(&env);
+    client.add_verifier(&admin, &verifier);
+
+    let original_expiry: u64 = 86_400 * 3;
+    env.ledger().set_timestamp(1_000);
+    client.approve(&verifier, &subject, &2, &original_expiry, &js(&env, "US"));
+
+    // Precondition: finite expiry is stored and indexed.
+    assert_eq!(client.get_record(&subject).expiry, original_expiry);
+    assert_eq!(client.get_expiring_soon(&(86_400 * 5), &0, &50).len(), 1);
+
+    // Renew the same record with no expiry.
+    client.approve(&verifier, &subject, &2, &0, &js(&env, "US"));
+
+    // Stored record reflects no expiry and stays Approved.
+    let record = client.get_record(&subject);
+    assert!(matches!(record.status, KycStatus::Approved));
+    assert_eq!(record.expiry, 0);
+    assert_eq!(record.tier, 2);
+    assert_eq!(record.verifier, verifier);
+    assert_eq!(record.jurisdiction, js(&env, "US"));
+    assert!(client.is_approved(&subject));
+    assert_eq!(client.get_kyc_state(&subject), KycState::Approved);
+
+    // The earlier expiry no longer applies anywhere.
+    let has_expiry_key = env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .has(&DataKey::SubjectExpiry(subject.clone()))
+    });
+    assert!(
+        !has_expiry_key,
+        "renewing with expiry 0 must clear SubjectExpiry"
+    );
+    assert_eq!(client.get_expiring_soon(&(86_400 * 5), &0, &50).len(), 0);
+
+    // The renewal is recorded as a second Approve transition with expiry 0.
+    let history = client.get_lifecycle_history(&subject, &0, &10);
+    assert_eq!(history.len(), 2);
+    let renewal = history.get(1).unwrap();
+    assert_eq!(renewal.kind, KycTransitionKind::Approve);
+    assert_eq!(renewal.expiry, 0);
+
+    // Still approved at, past, and far beyond the original expiry.
+    for ts in [original_expiry, original_expiry + 1, u64::MAX / 2] {
+        env.ledger().set_timestamp(ts);
+        assert!(client.is_approved(&subject), "must stay approved at t={ts}");
+        assert_eq!(client.get_kyc_state(&subject), KycState::Approved);
+    }
 }

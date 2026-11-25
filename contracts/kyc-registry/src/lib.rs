@@ -186,6 +186,9 @@ const DAY_IN_LEDGERS: u32 = 17280;
 const BUMP: u32 = 30 * DAY_IN_LEDGERS;
 const THRESHOLD: u32 = BUMP - DAY_IN_LEDGERS;
 const MAX_REVOKE_BATCH: u32 = 50; // instruction-budget cap per transaction
+/// Maximum number of subjects accepted by `approve_batch` / `revoke_batch`.
+/// Documented in docs/contract-api-reference.md ("max 20").
+const MAX_KYC_BATCH: u32 = 20;
 
 #[contract]
 pub struct KycRegistry;
@@ -408,7 +411,7 @@ impl KycRegistry {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         verifier.require_auth();
         Self::require_verifier(&env, &verifier);
-        if subjects.len() > 20 {
+        if subjects.len() > MAX_KYC_BATCH {
             panic_with_error!(env, KycError::BatchTooLarge);
         }
         let subjects_count = subjects.len();
@@ -491,7 +494,7 @@ impl KycRegistry {
         env.storage().instance().extend_ttl(THRESHOLD, BUMP);
         verifier.require_auth();
         Self::require_verifier(&env, &verifier);
-        if subjects.len() > 20 {
+        if subjects.len() > MAX_KYC_BATCH {
             panic_with_error!(env, KycError::BatchTooLarge);
         }
         for subject in subjects.iter() {

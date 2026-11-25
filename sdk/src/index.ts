@@ -119,7 +119,7 @@ export type {
 export type { GetContractEventsOptions } from "./clients/base.js";
 
 // ── Health and analytics (#400) ────────────────────────────────────────────────
-export { checkHealth } from "./health.js";
+export { checkHealth, MALFORMED_RPC_RESPONSE_PREFIX } from "./health.js";
 export type { ContractHealth, HealthCheckOptions } from "./health.js";
 
 // ── Auth helpers (#397) ─────────────────────────────────────────────────────────

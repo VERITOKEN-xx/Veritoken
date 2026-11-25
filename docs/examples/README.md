@@ -34,6 +34,7 @@ writes; the examples below follow the same pattern in each language.
 | [`javascript_example.js`](javascript_example.js) | JavaScript (Node.js) | `node javascript_example.js` |
 | [`kyc_read_example.mjs`](kyc_read_example.mjs) | JavaScript (Node.js, `@veritoken/sdk`) | `node docs/examples/kyc_read_example.mjs` (repository root) |
 | [`sdk_client_factory_example.ts`](sdk_client_factory_example.ts) | TypeScript (`@veritoken/sdk`) | `npx tsx docs/examples/sdk_client_factory_example.ts` |
+| [`sdk_health_check_example.ts`](sdk_health_check_example.ts) | TypeScript (`@veritoken/sdk`) | `npx tsx docs/examples/sdk_health_check_example.ts` |
 
 The TypeScript example additionally shows the SDK's client factory and
 dependency-injection pattern (`createClients` / `ClientFactory`) — composing

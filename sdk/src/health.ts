@@ -6,7 +6,8 @@
  * (read-only) and safe to call from monitoring scripts or dashboards.
  *
  * Signals collected:
- * - `reachable`         — RPC responded without a network error
+ * - `reachable`         — RPC responded without a network error and with a
+ *                         well-formed payload (see "Malformed responses")
  * - `paused`            — compliance engine pause state (where applicable)
  * - `latestLedger`      — current ledger sequence from the RPC node
  * - `recentEventCount`  — number of contract events in the last `lookbackLedgers` ledgers
@@ -14,6 +15,13 @@
  *
  * Per-contract extensions (e.g. `holderCount`, `verifierCount`) are added
  * by the individual client `health()` methods.
+ *
+ * Malformed responses (#984): a successful HTTP response is not proof of a
+ * healthy Soroban endpoint. If `getLatestLedger` returns no usable integer
+ * `sequence`, or `getEvents` returns no `events` array, the check reports
+ * `reachable: false` with an `error` starting with
+ * {@link MALFORMED_RPC_RESPONSE_PREFIX} so callers can tell a bad payload
+ * apart from a network failure without any change to `ContractHealth`.
  */
 
 import type { rpc } from "@stellar/stellar-sdk";
@@ -29,6 +37,13 @@ export interface ContractHealth {
   checkedAt: string;
   /** Any error message captured during the check. */
   error?: string;
+}
+
+/** Prefix of `ContractHealth.error` when the RPC returned an unusable payload. */
+export const MALFORMED_RPC_RESPONSE_PREFIX = "Malformed RPC response";
+
+function malformed(detail: string): Error {
+  return new Error(`${MALFORMED_RPC_RESPONSE_PREFIX}: ${detail}`);
 }
 
 export interface HealthCheckOptions {
@@ -53,15 +68,23 @@ export async function checkHealth(
   let error: string | undefined;
 
   try {
-    const ledgerInfo = await server.getLatestLedger();
-    latestLedger = ledgerInfo.sequence;
+    const ledgerInfo: unknown = await server.getLatestLedger();
+    const sequence = (ledgerInfo as { sequence?: unknown } | null | undefined)?.sequence;
+    if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 0) {
+      throw malformed("getLatestLedger returned no valid `sequence`");
+    }
+    latestLedger = sequence;
 
     const startLedger = Math.max(0, latestLedger - lookback);
-    const eventsResp = await server.getEvents({
+    const eventsResp: unknown = await server.getEvents({
       filters: [{ type: "contract", contractIds: [contractId] }],
       startLedger,
     });
-    recentEventCount = eventsResp.events.length;
+    const events = (eventsResp as { events?: unknown } | null | undefined)?.events;
+    if (!Array.isArray(events)) {
+      throw malformed("getEvents returned no `events` array");
+    }
+    recentEventCount = events.length;
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
     return { reachable: false, latestLedger: null, recentEventCount: 0, checkedAt, error };
