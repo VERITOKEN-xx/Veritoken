@@ -51,6 +51,8 @@ Veritoken is a reusable, composable kit of Soroban contracts that any team can f
 | `property-token` | Fractional real estate ownership. Includes a pro-rata dividend distribution mechanism with O(1) gas cost per holder. |
 | `carbon-credit-token` | Issues verified carbon credits (1 token = 1 tonne CO₂e). Permanent on-chain retirement receipts with beneficiary metadata. |
 
+For every public method, data structure, and error code exposed by these contracts, see the [Contract API Reference](docs/contract-api-reference.md).
+
 ### Compliance is enforced at the protocol level
 
 Every transfer on every asset token makes two cross-contract calls before any balance changes:
@@ -68,6 +70,10 @@ Deployments produce a canonical manifest and independently auditable
 verification report. See
 [docs/deployment-automation.md](docs/deployment-automation.md) for planning,
 resume, mainnet configuration, and verification details.
+Before operating a live deployment, read the
+[Incident Response Runbook](docs/incident-response.md) so you know how to pause
+transfers, rotate admin keys, or recover from a compromised verifier if an
+incident occurs.
 
 **Prerequisites:** Rust, `wasm32v1-none` target (`rustup target add wasm32v1-none`), Stellar CLI, Node.js ≥ 20 (required by the frontend and workspace packages — if `node --version` reports an older release, see [Node.js version is too old](docs/troubleshooting.md#nodejs-version-is-too-old) for how to check and switch versions)
 
